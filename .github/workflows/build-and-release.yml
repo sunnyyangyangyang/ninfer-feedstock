@@ -17,12 +17,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install rattler-build v0.75.0 (glibc, built from source)
+      - name: Download rattler-build v0.75.0 (official prebuilt binary)
+        # x86_64 Linux only ships a static (musl) binary in upstream
+        # releases; it is fully static, so it runs on the glibc runner.
+        # The produced .conda is built with conda-forge (glibc) toolchains,
+        # so the builder's own libc is irrelevant to the artifact.
         run: |
-          cargo install rattler-build \
-            --git https://github.com/prefix-dev/rattler-build.git \
-            --tag v0.75.0 --locked
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          curl -fsSL -O \
+            https://github.com/prefix-dev/rattler-build/releases/download/v0.75.0/rattler-build-x86_64-unknown-linux-musl.tar.gz \
+            -O \
+            https://github.com/prefix-dev/rattler-build/releases/download/v0.75.0/rattler-build-x86_64-unknown-linux-musl.tar.gz.sha256
+          sha256sum -c rattler-build-x86_64-unknown-linux-musl.tar.gz.sha256
+          mkdir -p "$HOME/rattler"
+          tar -xzf rattler-build-x86_64-unknown-linux-musl.tar.gz -C "$HOME/rattler"
+          echo "$HOME/rattler" >> "$GITHUB_PATH"
+          rattler --version
 
       - name: Build conda package
         # --test=skip: hosted runners have no NVIDIA driver (libcuda.so.1
@@ -41,7 +50,7 @@ jobs:
           {
             echo "# NInfer ${VER} — linux-64 (CI build)"
             echo ""
-            echo "Built by GitHub Actions with rattler-build v0.75.0 (glibc, no musl) against conda-forge."
+            echo "Built by GitHub Actions with rattler-build v0.75.0 against conda-forge (glibc toolchain)."
             echo ""
             echo "- Upstream: https://github.com/Neroued/ninfer (commit pinned in recipe/meta.yaml)"
             echo "- Target hardware: NVIDIA GeForce RTX 5090 (sm_120a / Blackwell); CUDA 13.x"
