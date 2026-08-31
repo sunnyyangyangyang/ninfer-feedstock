@@ -30,6 +30,7 @@ jobs:
           sha256sum -c rattler-build-x86_64-unknown-linux-musl.tar.gz.sha256
           mkdir -p "$HOME/rattler"
           tar -xzf rattler-build-x86_64-unknown-linux-musl.tar.gz -C "$HOME/rattler"
+          ln -sf "$HOME/rattler/rattler-build-x86_64-unknown-linux-musl/rattler-build" "$HOME/rattler/rattler"
           echo "$HOME/rattler" >> "$GITHUB_PATH"
           rattler --version
 
