@@ -35,6 +35,27 @@ jobs:
           # GITHUB_PATH takes effect for subsequent steps only; sanity-check via full path
           "$HOME/rattler/rattler" --version
 
+      - name: Provision /lib64 (required by prebuilt CUDA 13 libraries)
+        # NVIDIA-prebuilt libcudart.so / libcuda.so carry RHEL-style absolute
+        # DT_NEEDED entries (/lib64/libm.so.6, /lib64/libmvec.so.1). The
+        # linker resolves them by literal path: RHEL/Fedora hosts have /lib64,
+        # hosted ubuntu runners do not. Mirror the paths from
+        # /lib/x86_64-linux-gnu. The resulting NEEDED entries record bare
+        # sonames (libm.so.6, libmvec.so.1), so the artifact is unaffected.
+        run: |
+          sudo mkdir -p /lib64
+          for l in libm.so.6 libmvec.so.1; do
+            if [ -e "/lib/x86_64-linux-gnu/$l" ]; then
+              sudo ln -sf "/lib/x86_64-linux-gnu/$l" "/lib64/$l"
+            else
+              # glibc no longer ships $l (e.g. libmvec merged into libm in
+              # 2.34): fabricate an empty stub with the right soname
+              gcc -shared -x c /dev/null -Wl,-soname,"$l" -o "/tmp/$l"
+              sudo cp "/tmp/$l" "/lib64/$l"
+            fi
+          done
+          ls -la /lib64/
+
       - name: Build conda package
         # --test=skip: hosted runners have no NVIDIA driver (libcuda.so.1
         # missing), so the --help smoke test cannot execute. The smoke test

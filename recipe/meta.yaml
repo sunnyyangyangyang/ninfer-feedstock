@@ -31,17 +31,16 @@ requirements:
   # Mirrors the upstream local build environment:
   #   mamba create -c conda-forge cmake>=3.28 ninja gxx_linux-64 pkgconf
   #       ffmpeg libcurl>=7.85 cuda-toolkit=13.*
-  # (see the upstream repo's .deps mamba prefix). The upstream env resolved
-  # gxx 15.x at create time. NOTE: the compiler metas are deliberately
-  # pinned to 15.x: conda-forge published gcc 16.2.0 on 2026-08-31 and its
-  # link stage pulls in RHEL-style absolute NEEDED entries (/lib64/libm.so.6,
-  # /lib64/libmvec.so.1) from its RHEL-built libstdc++, which cannot be
-  # resolved on non-RHEL builders (e.g. GitHub-hosted ubuntu runners have no
-  # /lib64). The 15.x toolchain links cleanly everywhere. Bump to 16.x only
-  # after re-verifying a build on a glibc distro without /lib64.
+  # (see the upstream repo's .deps mamba prefix). The gcc/gxx metas track the
+  # newest conda-forge toolchain, same behavior as the upstream env. Builder
+  # requirement: the prebuilt CUDA 13 libraries (libcudart.so, libcuda.so
+  # stubs) carry RHEL-style absolute DT_NEEDED entries (/lib64/libm.so.6,
+  # /lib64/libmvec.so.1). Builders without a /lib64 directory (e.g.
+  # ubuntu-based CI runners) must provision it first — the feedstock workflow
+  # does (see .github/workflows/build-and-release.yml).
   build:
-    - gcc 15.*
-    - gxx 15.*
+    - gcc
+    - gxx
     - cmake >=3.28
     - ninja
     - pkgconf
