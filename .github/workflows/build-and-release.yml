@@ -3,8 +3,10 @@ name: Build & Release
 on:
   workflow_dispatch:
   push:
+    # leading-digit glob: the rolling `nightly` tag (continuous-build.yml)
+    # must never re-trigger this workflow via tag pushes
     tags:
-      - "*"
+      - "[0-9]*"
 
 permissions:
   contents: write
@@ -114,3 +116,12 @@ jobs:
               "$PKG" \
               || gh release upload "$VER" "$PKG" --clobber
           fi
+
+      - name: Publish to Pages channel
+        # gh-pages branch = static conda channel (repodata.json here, .conda
+        # files as GitHub Release assets); see scripts/publish_pages_channel.py
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VER="$(awk '/^  version:/{print $2; exit}' recipe/meta.yaml)"
+          python3 scripts/publish_pages_channel.py --mode release --tag "$VER"

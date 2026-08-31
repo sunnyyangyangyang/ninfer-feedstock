@@ -3,3 +3,6 @@ output/
 
 # rattler-build local cache created in the working directory
 cache/
+
+# local session status journal (agent working notes, never to be committed)
+.STATUS-CONTINUOUS.md

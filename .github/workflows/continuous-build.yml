@@ -1,0 +1,96 @@
+name: Continuous Build (12h)
+
+# Twice-daily (00:00 + 12:00 UTC) build of the feedstock HEAD, published to
+# the GitHub Pages conda channel with timestamp+githash naming:
+#   ninfer-<YYYY.MM.DD.HHMM>-<githash>-sm120a_h<hash>_0.conda
+# (conda filenames are name-version-build; dashes separate fields, so the
+# build string puts ghash+arch after the version; _h<hash>_0 is rattler's
+# content fingerprint, auto-appended.) The rolling `nightly` GitHub Release
+# accumulates all builds (no pruning — user policy).
+# Tagged releases (build-and-release.yml) are the pinned, stable versions.
+
+on:
+  schedule:
+    - cron: "0 */12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download rattler-build v0.75.0 (official prebuilt binary)
+        run: |
+          curl -fsSL -O \
+            https://github.com/prefix-dev/rattler-build/releases/download/v0.75.0/rattler-build-x86_64-unknown-linux-musl.tar.gz \
+            -O \
+            https://github.com/prefix-dev/rattler-build/releases/download/v0.75.0/rattler-build-x86_64-unknown-linux-musl.tar.gz.sha256
+          sha256sum -c rattler-build-x86_64-unknown-linux-musl.tar.gz.sha256
+          mkdir -p "$HOME/rattler"
+          tar -xzf rattler-build-x86_64-unknown-linux-musl.tar.gz -C "$HOME/rattler"
+          ln -sf "$HOME/rattler/rattler-build-x86_64-unknown-linux-musl/rattler-build" "$HOME/rattler/rattler"
+          echo "$HOME/rattler" >> "$GITHUB_PATH"
+          "$HOME/rattler/rattler" --version
+
+      - name: Provision /lib64 (required by prebuilt CUDA 13 libraries)
+        run: |
+          sudo mkdir -p /lib64 /usr/lib64
+          for f in /lib/x86_64-linux-gnu/*.so*; do
+            sudo ln -sf "$f" "/lib64/$(basename "$f")"
+          done
+          if [ -e /usr/lib/x86_64-linux-gnu/libc_nonshared.a ]; then
+            sudo ln -sf /usr/lib/x86_64-linux-gnu/libc_nonshared.a /usr/lib64/libc_nonshared.a
+          else
+            ar rcs /tmp/libc_nonshared.a
+            sudo cp /tmp/libc_nonshared.a /usr/lib64/libc_nonshared.a
+          fi
+          ls -la /lib64/ | head -20
+
+      - name: Prepare timestamped version
+        id: ver
+        run: |
+          TS="$(date -u +%Y.%m.%d.%H%M)"
+          GHASH="${GITHUB_SHA::7}"
+          # no dashes in the version; the build string carries ghash+arch
+          echo "version=${TS}" >> "$GITHUB_OUTPUT"
+          echo "prefix=${GHASH}-sm120a" >> "$GITHUB_OUTPUT"
+          sed -i "s/^  version: .*/  version: ${TS}/" recipe/meta.yaml
+          grep -n 'version:' recipe/meta.yaml | head -2
+
+      - name: Build conda package
+        run: |
+          rattler build -r recipe/meta.yaml -c conda-forge --test=skip \
+            --build-string-prefix "${{ steps.ver.outputs.prefix }}"
+
+      - name: Publish to GitHub Release (nightly)
+        # unique timestamped filenames -> appends; --clobber only makes
+        # reruns of the same run idempotent
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view nightly >/dev/null 2>&1; then
+            gh release create nightly \
+              --title "Rolling nightly builds (auto, 12h)" \
+              --notes "Continuous builds of the feedstock HEAD (RTX 5090 / sm_120a). All builds retained."
+          fi
+          gh release upload nightly output/linux-64/*.conda --clobber
+
+      - name: Publish to Pages channel
+        # gh-pages branch = static conda channel; merges this build's
+        # repodata entries with the channel's current ones
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/publish_pages_channel.py --mode nightly
+
+      - name: Upload run artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ninfer-conda
+          path: output/linux-64/*.conda
+          retention-days: 30

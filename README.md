@@ -19,6 +19,29 @@ The upstream project defines no CMake `install()` rules, so `build.sh`
 mirrors the upstream Dockerfile and copies the app binaries and public
 headers manually.
 
+## Installing from the channel
+
+This feedstock publishes its own conda channel as a static GitHub Pages
+site: `linux-64/repodata.json` lives on the `gh-pages` branch, while the
+~440 MB `.conda` files themselves are GitHub Release assets referenced by
+the repodata `urls` (they exceed git's 100 MB file limit, not the release
+asset cap).
+
+```bash
+conda config --add channels https://sunnyyangyangyang.github.io/ninfer-feedstock
+conda install ninfer            # run deps (cuda-cudart 13.x, ffmpeg, libcurl)
+                                # resolve automatically from conda-forge
+```
+
+- `ninfer 0.1.0` is the pinned, tagged build (GitHub Release `0.1.0`).
+- A rolling `nightly` build is published every 12 hours as
+  `ninfer-<YYYY.MM.DD.HHMM>-<githash>-sm120a_h<hash>_0` (`_h<hash>_0` is
+  rattler-build's content fingerprint); all builds are retained, so a plain
+  `conda install ninfer` picks the newest timestamp.
+- Runtime requires the system NVIDIA driver (`libcuda.so.1`) and a
+  GeForce RTX 5090 — the project hard-rejects every other CUDA
+  architecture (`sm_120a` only). Model weights are not included.
+
 ## The recipe: one file, two builders
 
 `recipe/meta.yaml` is written in the **intersection of the conda-build and
