@@ -37,24 +37,27 @@ jobs:
 
       - name: Provision /lib64 (required by prebuilt CUDA 13 libraries)
         # NVIDIA-prebuilt libcudart.so / libcuda.so carry RHEL-style absolute
-        # DT_NEEDED entries (/lib64/libm.so.6, /lib64/libmvec.so.1). The
-        # linker resolves them by literal path: RHEL/Fedora hosts have /lib64,
-        # hosted ubuntu runners do not. Mirror the paths from
-        # /lib/x86_64-linux-gnu. The resulting NEEDED entries record bare
-        # sonames (libm.so.6, libmvec.so.1), so the artifact is unaffected.
+        # DT_NEEDED entries (/lib64/libm.so.6, /lib64/libc.so.6, ...) and the
+        # RHEL-built conda gcc driver references /usr/lib64/libc_nonshared.a.
+        # The linker resolves such absolute paths literally (no sysroot
+        # mapping): RHEL/Fedora hosts have /lib64, hosted ubuntu runners do
+        # not. Mirror the whole runner glibc set into /lib64 and provide
+        # libc_nonshared.a. Output NEEDED/PT_INTERP bookkeeping is unaffected
+        # for the shared libraries (bare sonames are recorded).
         run: |
-          sudo mkdir -p /lib64
-          for l in libm.so.6 libmvec.so.1; do
-            if [ -e "/lib/x86_64-linux-gnu/$l" ]; then
-              sudo ln -sf "/lib/x86_64-linux-gnu/$l" "/lib64/$l"
-            else
-              # glibc no longer ships $l (e.g. libmvec merged into libm in
-              # 2.34): fabricate an empty stub with the right soname
-              gcc -shared -x c /dev/null -Wl,-soname,"$l" -o "/tmp/$l"
-              sudo cp "/tmp/$l" "/lib64/$l"
-            fi
+          sudo mkdir -p /lib64 /usr/lib64
+          for f in /lib/x86_64-linux-gnu/*.so*; do
+            sudo ln -sf "$f" "/lib64/$(basename "$f")"
           done
-          ls -la /lib64/
+          if [ -e /usr/lib/x86_64-linux-gnu/libc_nonshared.a ]; then
+            sudo ln -sf /usr/lib/x86_64-linux-gnu/libc_nonshared.a /usr/lib64/libc_nonshared.a
+          else
+            # static-only archive; an empty archive suffices for dynamic links
+            ar rcs /tmp/libc_nonshared.a
+            sudo cp /tmp/libc_nonshared.a /usr/lib64/libc_nonshared.a
+          fi
+          ls -la /lib64/ | head -20
+          ls -la /usr/lib64/
 
       - name: Build conda package
         # --test=skip: hosted runners have no NVIDIA driver (libcuda.so.1
