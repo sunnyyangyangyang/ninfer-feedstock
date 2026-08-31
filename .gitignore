@@ -1,0 +1,5 @@
+# rattler-build outputs (packages, build dirs, test dirs, source cache)
+output/
+
+# rattler-build local cache created in the working directory
+cache/

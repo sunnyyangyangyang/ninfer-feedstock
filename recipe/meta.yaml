@@ -1,0 +1,80 @@
+# NInfer feedstock recipe.
+#
+# SHARED SCHEMA: this file is deliberately jinja-free plain YAML so that it
+# parses unchanged under BOTH builders:
+#   * conda-build  (conda-forge CI; `recipe/meta.yaml` convention)
+#   * rattler-build (local builds; passed as `-r recipe/meta.yaml`)
+# Consequences of that choice (details in the feedstock README):
+#   * no `{% %}`/`{{ }}` jinja, no `# [selectors]`
+#   * no top-level `skip:` (not in rattler's strict recipe schema) -> the
+#     platform guard lives in build.sh
+#   * no `{{ compiler('c') }}` macro -> literal gcc/gxx compiler metas
+#   * about uses `homepage:` (accepted by both builders)
+#   * the `tests:` section runs under rattler-build; conda-build ignores it
+#     and runs run_test.sh from this directory (same smoke test)
+
+package:
+  name: ninfer
+  version: 0.1.0
+
+source:
+  # The upstream repository has no git tags and no in-tree version, so the
+  # conda-side version is pinned to an upstream commit. Bump version + url +
+  # sha256 together when updating.
+  - url: https://github.com/Neroued/ninfer/archive/d9dbe1ce4d1a53deec2349e669a429a000c54d01.tar.gz
+    sha256: 8d850db66ce4c39057a7f9e5b543ad9717562a021013ab7dbead2338801966f5
+
+build:
+  number: 0
+
+requirements:
+  # Mirrors the upstream local build environment:
+  #   mamba create -c conda-forge cmake>=3.28 ninja gxx_linux-64 pkgconf
+  #       ffmpeg libcurl>=7.85 cuda-toolkit=13.*
+  # (see the upstream repo's .deps mamba prefix). The upstream env resolved
+  # gxx 15.x (the newest conda-forge compiler at create time); the gcc/gxx
+  # metas resolve the same way here. If a future conda-forge gcc release
+  # breaks the CUDA 13 toolchain, pin e.g. `gxx 15.*` / `gcc 15.*`.
+  build:
+    - gcc
+    - gxx
+    - cmake >=3.28
+    - ninja
+    - pkgconf
+  host:
+    # Full CUDA 13.x toolkit: nvcc + libraries + dev files. The project's
+    # find_package(CUDAToolkit) resolves against the conda prefix layout
+    # (bin/nvcc + targets/x86_64-linux), same as in the upstream mamba
+    # prefix.
+    - cuda-toolkit 13.*
+    - ffmpeg
+    - libcurl >=7.85
+  run:
+    # ldd on the built binaries shows exactly one CUDA tool library
+    # (libcudart.so.13); libcuda.so.1 comes from the system NVIDIA driver
+    # and is intentionally not a conda dependency.
+    - cuda-cudart 13.*
+    - ffmpeg
+    - libcurl
+    - libstdcxx-ng
+
+# Executed by rattler-build. conda-build ignores this key and instead runs
+# run_test.sh from this directory (identical smoke test).
+tests:
+  - script:
+      - $PREFIX/bin/ninfer --help
+      - $PREFIX/bin/ninfer-serve --help
+
+about:
+  homepage: https://github.com/Neroued/ninfer
+  repository: https://github.com/Neroued/ninfer
+  license: Apache-2.0
+  license_file: LICENSE
+  summary: High-performance local LLM inference framework for a single NVIDIA GeForce RTX 5090
+  description: |
+    NInfer is a high-performance inference framework that runs text, image
+    and video prompts on a single NVIDIA GeForce RTX 5090 (sm_120a, CUDA
+    13.x). It provides a local CLI (ninfer) and an HTTP server
+    (ninfer-serve) with OpenAI/Anthropic-compatible APIs, and ships
+    hand-written CUDA kernels for Qwen3.x-family models with INT8/FP8/NVFP4
+    quantized weights and INT8/FP8 KV caches.
