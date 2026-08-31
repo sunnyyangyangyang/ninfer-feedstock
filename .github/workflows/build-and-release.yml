@@ -32,7 +32,8 @@ jobs:
           tar -xzf rattler-build-x86_64-unknown-linux-musl.tar.gz -C "$HOME/rattler"
           ln -sf "$HOME/rattler/rattler-build-x86_64-unknown-linux-musl/rattler-build" "$HOME/rattler/rattler"
           echo "$HOME/rattler" >> "$GITHUB_PATH"
-          rattler --version
+          # GITHUB_PATH takes effect for subsequent steps only; sanity-check via full path
+          "$HOME/rattler/rattler" --version
 
       - name: Build conda package
         # --test=skip: hosted runners have no NVIDIA driver (libcuda.so.1
