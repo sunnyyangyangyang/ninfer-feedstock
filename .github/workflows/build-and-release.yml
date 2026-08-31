@@ -1,0 +1,79 @@
+name: Build & Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install rattler-build v0.75.0 (glibc, built from source)
+        run: |
+          cargo install rattler-build \
+            --git https://github.com/prefix-dev/rattler-build.git \
+            --tag v0.75.0 --locked
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Build conda package
+        # --test=skip: hosted runners have no NVIDIA driver (libcuda.so.1
+        # missing), so the --help smoke test cannot execute. The smoke test
+        # is run on real hardware (see feedstock README).
+        run: |
+          rattler build -r recipe/meta.yaml -c conda-forge --test=skip
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PKG="$(ls output/linux-64/*.conda)"
+          SHA="$(sha256sum "$PKG" | awk '{print $1}')"
+          VER="$(awk '/^  version:/{print $2; exit}' recipe/meta.yaml)"
+          cat > /tmp/release-notes.md <<EOF
+# NInfer ${VER} — linux-64 (CI build)
+
+Built by GitHub Actions with rattler-build v0.75.0 (glibc, no musl) against conda-forge.
+
+- Upstream: https://github.com/Neroued/ninfer (commit pinned in recipe/meta.yaml)
+- Target hardware: NVIDIA GeForce RTX 5090 (sm_120a / Blackwell); CUDA 13.x
+- Binaries: \`ninfer\` (CLI), \`ninfer-serve\` (HTTP server, OpenAI/Anthropic-compatible APIs), \`ninfer-perplexity\`
+- Runtime deps (conda-forge): cuda-cudart 13.x, ffmpeg, libcurl, libstdcxx-ng — plus the system NVIDIA driver (provides \`libcuda.so.1\`)
+
+## Install
+
+\`\`\`
+# offline-capable
+conda install --offline ${PKG}
+micromamba install ${PKG}
+
+# smoke test only — no GPU/VRAM needed (on a machine with the NVIDIA driver)
+ninfer --help
+\`\`\`
+
+## Artifact
+
+\`\`\`
+sha256:  ${SHA}
+package: ${PKG}
+\`\`\`
+
+Model weights are **not** included. Reproduce from source: see \`README.md\`
+(\`rattler build -r recipe/meta.yaml -c conda-forge\`).
+EOF
+          if gh release view "$VER" >/dev/null 2>&1; then
+            gh release upload "$VER" "$PKG" --clobber
+          else
+            gh release create "$VER" \
+              --title "NInfer ${VER} (linux-64, RTX 5090 / sm_120a)" \
+              --notes-file /tmp/release-notes.md \
+              "$PKG"
+          fi
