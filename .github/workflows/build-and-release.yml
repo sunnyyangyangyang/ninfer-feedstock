@@ -38,42 +38,44 @@ jobs:
           PKG="$(ls output/linux-64/*.conda)"
           SHA="$(sha256sum "$PKG" | awk '{print $1}')"
           VER="$(awk '/^  version:/{print $2; exit}' recipe/meta.yaml)"
-          cat > /tmp/release-notes.md <<EOF
-# NInfer ${VER} — linux-64 (CI build)
-
-Built by GitHub Actions with rattler-build v0.75.0 (glibc, no musl) against conda-forge.
-
-- Upstream: https://github.com/Neroued/ninfer (commit pinned in recipe/meta.yaml)
-- Target hardware: NVIDIA GeForce RTX 5090 (sm_120a / Blackwell); CUDA 13.x
-- Binaries: \`ninfer\` (CLI), \`ninfer-serve\` (HTTP server, OpenAI/Anthropic-compatible APIs), \`ninfer-perplexity\`
-- Runtime deps (conda-forge): cuda-cudart 13.x, ffmpeg, libcurl, libstdcxx-ng — plus the system NVIDIA driver (provides \`libcuda.so.1\`)
-
-## Install
-
-\`\`\`
-# offline-capable
-conda install --offline ${PKG}
-micromamba install ${PKG}
-
-# smoke test only — no GPU/VRAM needed (on a machine with the NVIDIA driver)
-ninfer --help
-\`\`\`
-
-## Artifact
-
-\`\`\`
-sha256:  ${SHA}
-package: ${PKG}
-\`\`\`
-
-Model weights are **not** included. Reproduce from source: see \`README.md\`
-(\`rattler build -r recipe/meta.yaml -c conda-forge\`).
-EOF
+          {
+            echo "# NInfer ${VER} — linux-64 (CI build)"
+            echo ""
+            echo "Built by GitHub Actions with rattler-build v0.75.0 (glibc, no musl) against conda-forge."
+            echo ""
+            echo "- Upstream: https://github.com/Neroued/ninfer (commit pinned in recipe/meta.yaml)"
+            echo "- Target hardware: NVIDIA GeForce RTX 5090 (sm_120a / Blackwell); CUDA 13.x"
+            echo "- Binaries: ninfer (CLI), ninfer-serve (HTTP server, OpenAI/Anthropic-compatible APIs), ninfer-perplexity"
+            echo "- Runtime deps (conda-forge): cuda-cudart 13.x, ffmpeg, libcurl, libstdcxx-ng — plus the system NVIDIA driver (provides libcuda.so.1)"
+            echo ""
+            echo "## Install"
+            echo ""
+            echo '```'
+            echo "# offline-capable"
+            echo "conda install --offline ${PKG}"
+            echo "micromamba install ${PKG}"
+            echo ""
+            echo "# smoke test only — no GPU/VRAM needed (on a machine with the NVIDIA driver)"
+            echo "ninfer --help"
+            echo '```'
+            echo ""
+            echo "## Artifact"
+            echo ""
+            echo '```'
+            echo "sha256:  ${SHA}"
+            echo "package: ${PKG}"
+            echo '```'
+            echo ""
+            echo "Model weights are **not** included. Reproduce from source: see README.md"
+            echo "(rattler build -r recipe/meta.yaml -c conda-forge)."
+          } > /tmp/release-notes.md
           if gh release view "$VER" >/dev/null 2>&1; then
             gh release upload "$VER" "$PKG" --clobber
           else
+            # fallback: release may have appeared concurrently (retrigger race)
             gh release create "$VER" \
               --title "NInfer ${VER} (linux-64, RTX 5090 / sm_120a)" \
               --notes-file /tmp/release-notes.md \
-              "$PKG"
+              "$PKG" \
+              || gh release upload "$VER" "$PKG" --clobber
           fi
