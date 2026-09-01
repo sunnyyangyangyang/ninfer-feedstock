@@ -109,10 +109,12 @@ jobs:
             echo ""
             echo "mamba/micromamba users: install the asset below by direct URL (see README)."
           } > /tmp/release-notes.md
+          # --target pins the auto-created tag to exactly the built commit
+          # (default would be "main branch head at release time")
           gh release create "$TAG" output/linux-64/*.conda \
+            --target "$GITHUB_SHA" \
             --title "NInfer ${VER} (${GHASH})" \
-            --notes-file /tmp/release-notes.md \
-            --verify
+            --notes-file /tmp/release-notes.md
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Prune old per-build releases (keep newest 3)
