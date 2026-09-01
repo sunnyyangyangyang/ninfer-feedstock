@@ -95,21 +95,6 @@ and is deliberately not a conda dependency. The runtime CUDA requirement is
 therefore only `cuda-cudart`, while the full `cuda-toolkit` is needed at
 build time for `nvcc` and the CMake `CUDAToolkit` config.
 
-## Installing rattler-build (gnu)
-
-The official release ships only a **musl** static binary for x86_64 Linux,
-and conda-forge's feedstock lags behind (0.13.x), so for the gnu line build
-the pinned version from source:
-
-```bash
-# one-time (user-local, no root):
-curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
-cargo install rattler-build --version 0.75.0
-```
-
-(Or, on a machine that has cargo/dnf: `dnf install cargo` then the same
-`cargo install`.)
-
 ## Building
 
 ```bash
