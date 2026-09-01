@@ -1,0 +1,15 @@
+[Unit]
+Description=Twice-daily (00:00 + 12:00 UTC) ninfer-feedstock CI dispatch
+
+[Timer]
+# explicit UTC: the host may run any local timezone
+OnCalendar=*-*-* 00:00:00 UTC
+OnCalendar=*-*-* 12:00:00 UTC
+# fire as close to the exact minute as possible (default accuracy is 1min)
+AccuracySec=1s
+# if the machine was off at a trigger time, fire once on next boot instead
+# of skipping the slot silently
+Persistent=true
+
+[Install]
+WantedBy=timers.target

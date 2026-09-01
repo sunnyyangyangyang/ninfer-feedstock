@@ -3,8 +3,9 @@ name: Build & Release
 on:
   workflow_dispatch:
   push:
-    # leading-digit glob: the rolling `nightly` tag (continuous-build.yml)
-    # must never re-trigger this workflow via tag pushes
+    # leading-digit glob: per-build tags (continuous-build.yml) are
+    # v-prefixed (v<ts>-<g7>) and must never re-trigger this workflow via
+    # tag pushes
     tags:
       - "[0-9]*"
 

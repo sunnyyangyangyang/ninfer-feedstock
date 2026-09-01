@@ -33,11 +33,17 @@ conda install ninfer            # run deps (cuda-cudart 13.x, ffmpeg, libcurl)
                                 # resolve automatically from conda-forge
 ```
 
-- `ninfer 0.1.0` is the pinned, tagged build (GitHub Release `0.1.0`).
-- A rolling `nightly` build is published every 12 hours as
-  `ninfer-<YYYY.MM.DD.HHMM>-<githash>-sm120a_h<hash>_0` (`_h<hash>_0` is
-  rattler-build's content fingerprint); all builds are retained, so a plain
-  `conda install ninfer` picks the newest timestamp.
+- Each 12-hour build publishes its own tag + GitHub Release:
+  `v<YYYY.MM.DD.HHMM>-<githash7>` (asset
+  `ninfer-<YYYY.MM.DD.HHMM>-<githash7>-sm120a_h<hash>_0`, `_h<hash>_0` is
+  rattler-build's content fingerprint). The newest 3 per-build releases are
+  retained, older ones (release + tag) are deleted, so a plain
+  `conda install ninfer` always picks the newest timestamp while release
+  storage stays bounded (~1.4 GB).
+- Builds are dispatched at 00:00/12:00 UTC on the minute by a maintainer
+  host's systemd timer (GitHub's free-tier `schedule` cron was observed
+  lagging 2.5–3.7 h; see `scripts/ci-timer/`), so the newest build is
+  typically available ~15 min past the top of the even UTC hour.
 - Runtime requires the system NVIDIA driver (`libcuda.so.1`) and a
   GeForce RTX 5090 — the project hard-rejects every other CUDA
   architecture (`sm_120a` only). Model weights are not included.
@@ -73,9 +79,11 @@ curl -s https://sunnyyangyangyang.github.io/ninfer-feedstock/linux-64/repodata.j
     | python3 -c 'import json,sys; [print(k) for k in sorted(json.load(sys.stdin)["packages.conda"], reverse=True)]'
 
 # 2. install. Run deps (cuda-cudart 13.*, ffmpeg, libcurl, libstdcxx-ng)
-#    must be satisfiable from the prefix or your channels (add `-c conda-forge`):
+#    must be satisfiable from the prefix or your channels (add `-c conda-forge`).
+#    <tag> is the per-build release tag (v<YYYY.MM.DD.HHMM>-<githash7>);
+#    the repodata entry's "url" field is the exact asset URL to paste:
 mamba install -p <prefix> \
-    "https://github.com/sunnyyangyangyang/ninfer-feedstock/releases/download/nightly/<asset>.conda"
+    "https://github.com/sunnyyangyangyang/ninfer-feedstock/releases/download/<tag>/<asset>.conda"
 ```
 
 Until libmamba stops discarding per-package repodata URLs, or the binaries

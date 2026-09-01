@@ -17,8 +17,10 @@ Package entry metadata (name/version/build/depends/...) is taken from the
 rattler-build output repodata.json in ``output/linux-64/``; this script
 adds the download URLs, merges with the channel's current repodata (read
 from the gh-pages branch via the GitHub contents API — no Pages/CDN lag),
-and pushes the result back to gh-pages. All published packages are
-retained (no pruning).
+and pushes the result back to gh-pages. Before pushing, entries whose
+download URL no longer exists on any live GitHub Release are pruned
+(self-healing sync: when CI deletes an old per-build release, its channel
+entry disappears on the next publish).
 
 Usage (inside CI):
     python3 scripts/publish_pages_channel.py --mode release --tag 0.1.0
@@ -131,6 +133,41 @@ def collect_new_entries(outdir, owner, name, tag, rehash_file=None):
     return entries
 
 
+def live_release_urls(token, owner, name):
+    """Set of download URLs of every asset on every live release."""
+    urls = set()
+    page = 1
+    while True:
+        data = gh_api(
+            token, "GET",
+            f"repos/{owner}/{name}/releases?per_page=100&page={page}",
+        )
+        if not isinstance(data, list):
+            die(f"could not list releases: {data!r}")
+        for rel in data:
+            for a in rel.get("assets", []):
+                u = a.get("browser_download_url")
+                if u:
+                    urls.add(u)
+        if len(data) < 100:
+            break
+        page += 1
+    return urls
+
+
+def prune_dead_entries(pc, live):
+    """Drop entries whose URL no longer exists on any live release."""
+    dead = [
+        k for k, v in pc.items()
+        if v.get("url") not in live
+        and not any(u in live for u in (v.get("urls") or []))
+    ]
+    for k in dead:
+        print(f"pruning dead entry: {k} (no matching live release asset)")
+        del pc[k]
+    return dead
+
+
 def push_to_ghpages(token, owner, name, repodata, dry_run):
     """Commit linux-64/repodata.json (+ mirror + index.html) to gh-pages."""
     work = "/tmp/pages-channel-work"
@@ -233,6 +270,12 @@ def main():
     current = fetch_current_repodata(token, owner, name)
     pc = current["packages.conda"]
     pc.update(new_entries)
+
+    # 3) drop entries whose release no longer exists (pruned by CI, or the
+    #    retired rolling `nightly` release); keeps channel == releases
+    if not args.dry_run:
+        live = live_release_urls(token, owner, name)
+        prune_dead_entries(pc, live)
 
     # 4) normalize the document shape conda expects
     out = {

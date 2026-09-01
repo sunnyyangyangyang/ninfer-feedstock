@@ -1,17 +1,30 @@
 name: Continuous Build (12h)
 
-# Twice-daily (00:00 + 12:00 UTC) build of the feedstock HEAD, published to
-# the GitHub Pages conda channel with timestamp+githash naming:
-#   ninfer-<YYYY.MM.DD.HHMM>-<githash>-sm120a_h<hash>_0.conda
-# (conda filenames are name-version-build; dashes separate fields, so the
-# build string puts ghash+arch after the version; _h<hash>_0 is rattler's
-# content fingerprint, auto-appended.) The rolling `nightly` GitHub Release
-# accumulates all builds (no pruning — user policy).
-# Tagged releases (build-and-release.yml) are the pinned, stable versions.
+# Twice-daily (00:00 + 12:00 UTC) build of the feedstock HEAD.
+#
+# On-time triggering: GitHub's free-tier `schedule` cron proved unreliable
+# (2026-09-01: the 00:00 UTC slot started 02:27 UTC, the 12:00 slot
+# started 15:42 UTC — 2.5-3.7h of scheduler lag). `workflow_dispatch`
+# runs start within ~1 minute, so the on-time trigger is an external
+# systemd user timer on the maintainer's box that fires
+# `gh workflow run continuous-build.yml` at :00 sharp (units live in
+# scripts/ci-timer/). This workflow deliberately has NO schedule block —
+# keeping one would double-build ~3h after every on-time dispatch.
+#
+# Every build is published under its own tag + GitHub Release:
+#   tag:   v<YYYY.MM.DD.HHMM>-<githash7>
+#          (v-prefix: never matches build-and-release.yml's [0-9]* tag
+#          filter, so per-build tags can't re-trigger versioned builds)
+#   asset: ninfer-<YYYY.MM.DD.HHMM>-<githash7>-sm120a_h<hash>_0.conda
+#          (_h<hash>_0 is rattler's content fingerprint, auto-appended)
+# After each run, old per-build releases are pruned (newest 3 kept,
+# ~1.4 GB storage cap) and the Pages publish step drops repodata entries
+# whose release no longer exists. Versioned releases (build-and-release.yml)
+# are pinned, stable, and never pruned.
 
 on:
-  schedule:
-    - cron: "0 */12 * * *"
+  # external timer (scripts/ci-timer/) + manual runs; no schedule block on
+  # purpose (see header: free-tier cron lag doubles builds)
   workflow_dispatch:
 
 permissions:
@@ -68,25 +81,68 @@ jobs:
           rattler build -r recipe/meta.yaml -c conda-forge --test=skip \
             --build-string-prefix "${{ steps.ver.outputs.prefix }}"
 
-      - name: Publish to GitHub Release (nightly)
-        # unique timestamped filenames -> appends; --clobber only makes
-        # reruns of the same run idempotent
+      - name: Create per-build release (tag = v<version>-<githash>)
+        # one tag + release per build; v-prefix keeps per-build tags away
+        # from build-and-release.yml's [0-9]* tag trigger
+        id: tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if ! gh release view nightly >/dev/null 2>&1; then
-            gh release create nightly \
-              --title "Rolling nightly builds (auto, 12h)" \
-              --notes "Continuous builds of the feedstock HEAD (RTX 5090 / sm_120a). All builds retained."
+          VER="${{ steps.ver.outputs.version }}"
+          GHASH="${GITHUB_SHA::7}"
+          TAG="v${VER}-${GHASH}"
+          {
+            echo "# NInfer ${VER} — linux-64 (sm_120a, continuous build)"
+            echo ""
+            echo "Continuous build of the feedstock HEAD (RTX 5090 / sm_120a), 12-hour cycle."
+            echo ""
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Channel: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+            echo ""
+            echo "## Install"
+            echo ""
+            echo '```'
+            echo "conda config --add channels https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+            echo "conda install ninfer=${VER}"
+            echo '```'
+            echo ""
+            echo "mamba/micromamba users: install the asset below by direct URL (see README)."
+          } > /tmp/release-notes.md
+          gh release create "$TAG" output/linux-64/*.conda \
+            --title "NInfer ${VER} (${GHASH})" \
+            --notes-file /tmp/release-notes.md \
+            --verify
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Prune old per-build releases (keep newest 3)
+        # per-build tags match v<ts>-<g7>; versioned tags ([0-9]*...) are
+        # never touched. Newest 3 kept => ~1.4 GB release-storage cap.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mapfile -t PRUNE < <(
+            gh release list --limit 100 --json tag_name --jq '.[].tag_name' \
+              | grep -E '^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{4}-[0-9a-f]{7}$' \
+              | sort | head -n -3
+          )
+          if [ "${#PRUNE[@]}" -gt 0 ]; then
+            for t in "${PRUNE[@]}"; do
+              echo "deleting old release ${t} (release + tag, frees asset storage)"
+              gh release delete "$t" --cleanup-tag -y
+            done
+          else
+            echo "nothing to prune (<= 3 per-build releases exist)"
           fi
-          gh release upload nightly output/linux-64/*.conda --clobber
 
       - name: Publish to Pages channel
         # gh-pages branch = static conda channel; merges this build's
-        # repodata entries with the channel's current ones
+        # repodata entry (pointing at the per-build release just created)
+        # with the channel's current ones and drops entries whose release
+        # no longer exists (self-heals after pruning)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 scripts/publish_pages_channel.py --mode nightly
+        run: python3 scripts/publish_pages_channel.py --mode release --tag "${{ steps.tag.outputs.tag }}"
 
       - name: Upload run artifact
         uses: actions/upload-artifact@v4
