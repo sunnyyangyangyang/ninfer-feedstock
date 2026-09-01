@@ -6,3 +6,5 @@ cache/
 
 # local session status journal (agent working notes, never to be committed)
 .STATUS-CONTINUOUS.md
+__pycache__/
+*.pyc
