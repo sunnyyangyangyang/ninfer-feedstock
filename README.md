@@ -42,6 +42,47 @@ conda install ninfer            # run deps (cuda-cudart 13.x, ffmpeg, libcurl)
   GeForce RTX 5090 — the project hard-rejects every other CUDA
   architecture (`sm_120a` only). Model weights are not included.
 
+## Client compatibility: the mamba/micromamba caveat
+
+The channel layout is **metadata on Pages, binaries on GitHub Releases**:
+`repodata.json` (small) lives on the Pages site, while the ~440–460 MB
+`.conda` files live as Release assets and are referenced from repodata via
+the standard `urls` field (plus the singular `url` key, which libmamba
+parses). Whether the plain `config --add channels … && install ninfer` flow
+works depends on the client:
+
+| Client | channel flow | Why |
+| --- | --- | --- |
+| classic conda | ✅ works | conda honors the repodata `urls` list and downloads from the release-asset URLs |
+| mamba / micromamba (libmamba 2.x, incl. upstream `main`) | ❌ 404 | libmamba's solver layer overwrites **every** package URL with `<channel>/<subdir>/<filename>` (`set_solvables_url()` in `libmamba/src/solver/libsolv/helpers.cpp`), discarding the repodata-advertised URLs before the download. The file cannot instead live on the Pages site: it exceeds git's 100 MB file limit, and GitHub Pages does not resolve Git LFS pointers (it would serve the ~130-byte pointer text instead of the package — [community discussion #104092](https://github.com/orgs/community/discussions/104092)) |
+
+The `Failed to load subdir … repodata.json.zst … 404` warnings during
+`mamba install` are harmless: the channel publishes plain `repodata.json`
+and libmamba transparently falls back to it.
+
+### Installing with mamba/micromamba: direct release-asset URL
+
+mamba (and micromamba) can install a `.conda` file by direct URL — the
+exact file the channel references, minus the (broken) channel
+indirection:
+
+```bash
+# 1. current asset names, straight from the channel repodata
+#    (…or just open https://github.com/sunnyyangyangyang/ninfer-feedstock/releases):
+curl -s https://sunnyyangyangyang.github.io/ninfer-feedstock/linux-64/repodata.json \
+    | python3 -c 'import json,sys; [print(k) for k in sorted(json.load(sys.stdin)["packages.conda"], reverse=True)]'
+
+# 2. install. Run deps (cuda-cudart 13.*, ffmpeg, libcurl, libstdcxx-ng)
+#    must be satisfiable from the prefix or your channels (add `-c conda-forge`):
+mamba install -p <prefix> \
+    "https://github.com/sunnyyangyangyang/ninfer-feedstock/releases/download/nightly/<asset>.conda"
+```
+
+Until libmamba stops discarding per-package repodata URLs, or the binaries
+are hosted at `<channel>/<subdir>/<file>` on size-unlimited object storage,
+this direct-URL form is the only mamba-side path. Classic `conda` needs no
+such workaround.
+
 ## The recipe: one file, two builders
 
 `recipe/meta.yaml` is written in the **intersection of the conda-build and
