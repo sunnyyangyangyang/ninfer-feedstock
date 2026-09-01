@@ -117,7 +117,14 @@ def collect_new_entries(outdir, owner, name, tag, rehash_file=None):
             meta["md5"] = hashlib.md5(blob, usedforsecurity=False).hexdigest()
             meta["size"] = len(blob)
             print(f"rehashed {fname} from {rehash_file} (sha256={meta['sha256'][:12]}...)")
-        meta["urls"] = [f"{base_url}/{fname}"]
+        download_url = f"{base_url}/{fname}"
+        meta["urls"] = [download_url]
+        # libmamba (mamba/micromamba, incl. upstream main as of 2.4.0) reads
+        # the SINGULAR "url" key and silently ignores the standard "urls"
+        # list; without it mamba re-derives <channel>/<subdir>/<filename>
+        # and 404s (package files live on Release assets, not on Pages).
+        # Classic conda (rudder) reads "urls" and ignores the extra key.
+        meta["url"] = download_url
         entries[fname] = meta
     if not entries:
         die(f"no package entries found in {rep_path} with existing .conda files")
