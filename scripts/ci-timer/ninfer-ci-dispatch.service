@@ -1,8 +1,0 @@
-[Unit]
-Description=Dispatch ninfer-feedstock CI build (on-time trigger, replaces unreliable GH free-tier cron)
-
-[Service]
-Type=oneshot
-# gh is authenticated on this machine (keyring); the dispatch itself takes
-# seconds, and the Actions run then starts within ~1 minute on the free tier.
-ExecStart=/usr/bin/gh workflow run continuous-build.yml -R sunnyyangyangyang/ninfer-feedstock

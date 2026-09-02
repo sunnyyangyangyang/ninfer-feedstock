@@ -40,10 +40,12 @@ conda install ninfer            # run deps (cuda-cudart 13.x, ffmpeg, libcurl)
   retained, older ones (release + tag) are deleted, so a plain
   `conda install ninfer` always picks the newest timestamp while release
   storage stays bounded (~1.4 GB).
-- Builds are dispatched at 00:00/12:00 UTC on the minute by a maintainer
-  host's systemd timer (GitHub's free-tier `schedule` cron was observed
-  lagging 2.5–3.7 h; see `scripts/ci-timer/`), so the newest build is
-  typically available ~15 min past the top of the even UTC hour.
+- Builds are dispatched at 00:00/12:00 UTC by an external cron service
+  that fires GitHub's `workflow_dispatch` API on schedule (GitHub's
+  free-tier `schedule` cron was observed lagging 2.5–3.7 h, and the
+  maintainer's machine is not 24/7 — see `scripts/ci-cron/`), so the
+  newest build is typically available ~15 min past the top of the even
+  UTC hour.
 - Runtime requires the system NVIDIA driver (`libcuda.so.1`) and a
   GeForce RTX 5090 — the project hard-rejects every other CUDA
   architecture (`sm_120a` only). Model weights are not included.

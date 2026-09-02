@@ -4,12 +4,14 @@ name: Continuous Build (12h)
 #
 # On-time triggering: GitHub's free-tier `schedule` cron proved unreliable
 # (2026-09-01: the 00:00 UTC slot started 02:27 UTC, the 12:00 slot
-# started 15:42 UTC — 2.5-3.7h of scheduler lag). `workflow_dispatch`
-# runs start within ~1 minute, so the on-time trigger is an external
-# systemd user timer on the maintainer's box that fires
-# `gh workflow run continuous-build.yml` at :00 sharp (units live in
-# scripts/ci-timer/). This workflow deliberately has NO schedule block —
-# keeping one would double-build ~3h after every on-time dispatch.
+# started 15:42 UTC — 2.5-3.7h of scheduler lag), and the maintainer's
+# box is not 24/7, so a local timer can't own the schedule either.
+# `workflow_dispatch` runs start within ~1 minute, so the on-time trigger
+# is an external cron service (cron-job.org free plan; job spec in
+# scripts/ci-cron/README.md) that POSTs to this repo's workflow_dispatch
+# API endpoint at :00 UTC sharp. This workflow deliberately has NO
+# schedule block — keeping one would double-build ~3h after every on-time
+# dispatch.
 #
 # Every build is published under its own tag + GitHub Release:
 #   tag:   v<YYYY.MM.DD.HHMM>-<githash7>
@@ -23,8 +25,8 @@ name: Continuous Build (12h)
 # are pinned, stable, and never pruned.
 
 on:
-  # external timer (scripts/ci-timer/) + manual runs; no schedule block on
-  # purpose (see header: free-tier cron lag doubles builds)
+  # external cron service (scripts/ci-cron/) + manual runs; no schedule
+  # block on purpose (see header: free-tier cron lag doubles builds)
   workflow_dispatch:
 
 permissions:
