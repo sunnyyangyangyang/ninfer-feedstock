@@ -34,8 +34,18 @@ within ~1 minute on the free tier).
 
 1. **Create a minimal token.** github.com → Settings → Developer settings
    → Personal access tokens → **Tokens (classic)** → Generate new token.
-   Check **only `workflow`** (it can trigger workflow dispatches and
-   nothing else — no code, no secrets, no repo reads).
+   Check **`workflow`** and use a long custom expiry (max 1 year — rotate
+   yearly; see below).
+   - ⚠️ **Classic tokens can't be workflow-only:** the GitHub UI
+     force-checks the `repo` parent whenever `workflow` is selected (the
+     parent box is disabled and can't be unchecked — verified 2026-09-03).
+     The token you can create here is therefore `workflow` + `repo`
+     (verified: `repo` read returns 200). It still cannot touch Actions
+     secrets, packages, or issue anything, and it is account-scoped
+     (no `sudo`), so the exposure is bounded — but if you want
+     *provably* minimal scope, use a **fine-grained token** instead:
+     Settings → Developer settings → Fine-grained tokens → scope it to
+     *this repo* with permission "Workflow: Read and write" only.
 2. **Create the job** on cron-job.org (New Job → cURL / REST):
    - URL: `https://api.github.com/repos/sunnyyangyangyang/ninfer-feedstock/actions/workflows/continuous-build.yml/dispatches`
    - Method: `POST`
@@ -51,8 +61,10 @@ within ~1 minute on the free tier).
    failed (bad token / API outage), not the build.
 
 ### If the token ever needs rotating
-Replace the header in the cron job; GitHub classic tokens can be revoked
-from Settings → Developer settings → Tokens (classic).
+Classic tokens expire at most 1 year after creation (GitHub's custom
+expiry cap) — plan a yearly re-create. Rotate by replacing the header
+in the cron job; old classic tokens can be revoked from Settings →
+Developer settings → Tokens (classic).
 
 ## Alternative (no third-party site): Cloudflare Workers cron trigger
 
