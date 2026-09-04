@@ -140,7 +140,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mapfile -t PRUNE < <(
-            gh release list --limit 100 --json tag_name --jq '.[].tag_name' \
+            # gh release list json field is `tagName` (camelCase); requesting
+            # `tag_name` errors out and silently prunes nothing (2026-09-04:
+            # releases accumulated to 6 because the step no-op'd every run)
+            gh release list --limit 100 --json tagName --jq '.[].tagName' \
               | grep -E '^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{4}-[0-9a-f]{7}$' \
               | sort | head -n -3
           )
