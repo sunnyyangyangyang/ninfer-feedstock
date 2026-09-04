@@ -36,16 +36,21 @@ conda install ninfer            # run deps (cuda-cudart 13.x, ffmpeg, libcurl)
 - Each 12-hour run fetches the **latest NInfer commit** (default-branch
   HEAD of `Neroued/ninfer`) and publishes it under its own tag + GitHub
   Release: `v<YYYY.MM.DD.HHMM>-<hash7>` (asset
-  `ninfer-<YYYY.MM.DD.HHMM>-<hash7>-sm120a_h<hash>_0`, `_h<hash>_0` is
-  rattler-build's content fingerprint). `<hash7>` is the first seven chars
-  of the upstream commit the package was built from — not this feedstock
-  repo's commit hash (issue #1). If upstream has no new commit since the
-  previous successful run, the run **skips** without publishing: the
-  channel already carries the latest code, so a rebuild would only
-  produce duplicate assets. The newest 3 per-build releases are retained,
-  older ones (release + tag) are deleted, so a plain
-  `conda install ninfer` always picks the newest timestamp while release
-  storage stays bounded (~1.4 GB).
+  `ninfer-<YYYY.MM.DD.HHMM>-<hash7>-sm120a.conda` — the recipe's static
+  `build.string` is exactly `<hash7>-sm120a`, so the filename and the
+  package's `build` field carry no opaque fingerprint tail). `<hash7>` is
+  the first seven chars of the upstream commit the package was built from
+  — not this feedstock repo's commit hash (issue #1). Every release also
+  ships a twin asset with the constant name `ninfer-latest.conda` (same
+  bytes), which turns GitHub's
+  `releases/latest/download/ninfer-latest.conda` URL into a stable
+  install/replace-update entry point (mamba section below). If upstream
+  has no new commit since the previous successful run, the run **skips**
+  without publishing: the channel already carries the latest code, so a
+  rebuild would only produce duplicate assets. The newest 3 per-build
+  releases are retained, older ones (release + tag) are deleted, so a
+  plain `conda install ninfer` always picks the newest timestamp while
+  release storage stays bounded (~1.4 GB).
 - The `source:` pin in `recipe/meta.yaml` is the **stable baseline**:
   versioned releases (`build-and-release.yml`) and local
   `rattler build` use it as written. The continuous workflow re-pins it
@@ -82,31 +87,56 @@ The `Failed to load subdir … repodata.json.zst … 404` warnings during
 `mamba install` are harmless: the channel publishes plain `repodata.json`
 and libmamba transparently falls back to it.
 
-### Installing with mamba/micromamba: direct release-asset URL
+### Installing / updating with mamba/micromamba: one stable URL
 
 mamba (and micromamba) can install a `.conda` file by direct URL — the
 exact file the channel references, minus the (broken) channel
-indirection:
+indirection. Every release also ships the twin asset
+`ninfer-latest.conda` (identical bytes, constant name), and GitHub's
+`/releases/latest` endpoint always serves the newest release — so this
+**constant URL always hits the newest build**:
 
 ```bash
-# 1. current asset names, straight from the channel repodata
-#    (…or just open https://github.com/sunnyyangyangyang/ninfer-feedstock/releases):
+# install, or replace-update the installed build, in one command —
+# re-run it any time to jump to the newest build (same package name,
+# newer version: the solver unlinks the old one automatically):
+mamba install -p <prefix> \
+    "https://github.com/sunnyyangyangyang/ninfer-feedstock/releases/latest/download/ninfer-latest.conda"
+```
+
+Run deps (cuda-cudart 13.*, ffmpeg, libcurl, libstdcxx-ng) must be
+satisfiable from the prefix or your channels (add `-c conda-forge`).
+
+### Pinning a specific build (direct release-asset URL)
+
+`<tag>` is the per-build release tag (`v<YYYY.MM.DD.HHMM>-<hash7>`,
+upstream NInfer commit hash); the repodata entry's "url" field is the
+exact asset URL to paste (…or open
+<https://github.com/sunnyyangyangyang/ninfer-feedstock/releases>):
+
+```bash
+# 1. current asset names, straight from the channel repodata:
 curl -s https://sunnyyangyangyang.github.io/ninfer-feedstock/linux-64/repodata.json \
     | python3 -c 'import json,sys; [print(k) for k in sorted(json.load(sys.stdin)["packages.conda"], reverse=True)]'
 
-# 2. install. Run deps (cuda-cudart 13.*, ffmpeg, libcurl, libstdcxx-ng)
-#    must be satisfiable from the prefix or your channels (add `-c conda-forge`).
-#    <tag> is the per-build release tag (v<YYYY.MM.DD.HHMM>-<hash7>,
-#    upstream NInfer commit hash); the repodata entry's "url" field is the
-#    exact asset URL to paste:
+# 2. install that specific build:
 mamba install -p <prefix> \
     "https://github.com/sunnyyangyangyang/ninfer-feedstock/releases/download/<tag>/<asset>.conda"
 ```
 
-Until libmamba stops discarding per-package repodata URLs, or the binaries
-are hosted at `<channel>/<subdir>/<file>` on size-unlimited object storage,
-this direct-URL form is the only mamba-side path. Classic `conda` needs no
-such workaround.
+### Gotchas (mamba + local files)
+
+- **Relative paths need `./` or an absolute path.** `mamba install
+  Downloads/foo.conda` (no `./`) is parsed as *channel `Downloads`* and
+  libmamba then 404s on `conda.anaconda.org/Downloads/foo.conda`.
+- Installing from a **local file** (not a channel) prints
+  `Could not validate package …: md5 and sha256 sum unknown` — harmless:
+  there is no repodata to verify against. `--no-safety-checks` silences
+  it.
+- Until libmamba stops discarding per-package repodata URLs, or the
+  binaries are hosted at `<channel>/<subdir>/<file>` on size-unlimited
+  object storage, these URL/file forms are the only mamba-side paths.
+  Classic `conda` needs no such workaround.
 
 ## The recipe: one file, two builders
 
@@ -120,6 +150,7 @@ rattler-build v0.75 recipe schemas** — deliberately jinja-free plain YAML:
 | literal `gcc`/`gxx` instead of `{{ compiler(...) }}` | the macro is jinja; the compiler meta packages are the macro's output anyway |
 | `about: homepage:` (not `home:`) | rattler's `about` schema only knows `homepage`; conda-build accepts both |
 | `tests:` section in the recipe + `run_test.sh` on disk | rattler runs the `tests:` section; conda-build ignores that key and runs `run_test.sh` — same `--help` smoke test either way |
+| static `build: string:` (no jinja, no `--build-string-prefix`) | both builders accept a static build string; rattler-build uses it **verbatim** (no auto `_h<hash>_0` content-fingerprint tail), conda-build appends the build number (`_0`) — cosmetic difference only |
 
 So the same feedstock builds under:
 
@@ -193,12 +224,13 @@ Output: `output/linux-64/ninfer-0.1.0-*.conda`
   (`targets/x86_64-linux/include/nvtx3 -> <nsight-compute>/.../nvtx/include/nvtx3`).
 - **Versioning**: upstream has no tags or in-tree version, so the package
   version is pinned to an upstream commit (see `source:` in `meta.yaml`).
-  Bump `version` + `source url/sha256` together for updates. Per-build
-  release tags (`v<ts>-<hash7>`) and asset names carry the hash of the
-  upstream commit that build was made from (continuous builds pull upstream
-  HEAD per run; versioned builds use the pinned baseline) — not this
-  feedstock repo's hash — so a tag always identifies the exact NInfer
-  source the package was built from.
+  Bump `version` + `source url/sha256` + `build.string` together for
+  updates (the build string is `<commit7>-sm120a`, see `build:` in
+  `meta.yaml`). Per-build release tags (`v<ts>-<hash7>`) and asset names
+  carry the hash of the upstream commit that build was made from
+  (continuous builds pull upstream HEAD per run; versioned builds use the
+  pinned baseline) — not this feedstock repo's hash — so a tag always
+  identifies the exact NInfer source the package was built from.
 
 ## Verifying the built package
 

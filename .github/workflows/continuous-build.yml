@@ -27,8 +27,15 @@ name: Continuous Build (12h)
 #          whose hash only identifies recipe/CI plumbing; issue #1)
 #          (v-prefix: never matches build-and-release.yml's [0-9]* tag
 #          filter, so per-build tags can't re-trigger versioned builds)
-#   * asset: ninfer-<YYYY.MM.DD.HHMM>-<upstream-hash7>-sm120a_h<hash>_0.conda
-#          (_h<hash>_0 is rattler's content fingerprint, auto-appended)
+#   * asset: ninfer-<YYYY.MM.DD.HHMM>-<upstream-hash7>-sm120a.conda
+#          (the recipe's static `build.string` = "<upstream-hash7>-sm120a"
+#          is used verbatim by rattler-build — no auto content-fingerprint
+#          tail — so the filename/`build` field is exactly that)
+#   * a twin asset with the constant name `ninfer-latest.conda` (same
+#     bytes) is uploaded too, so GitHub's
+#     /releases/latest/download/ninfer-latest.conda URL always serves the
+#     newest build — the one-command install/replace-update entry point
+#     for mamba/micromamba users (see README)
 # After each run, old per-build releases are pruned (newest 3 kept,
 # ~1.4 GB storage cap) and the Pages publish step drops repodata entries
 # whose release no longer exists. Versioned releases (build-and-release.yml)
@@ -123,11 +130,13 @@ jobs:
           ls -la /lib64/ | head -20
 
       - name: Repin recipe to upstream HEAD + prepare timestamped version
-        # re-pins the recipe source to the upstream commit this run builds:
-        # meta.yaml on main keeps the stable baseline (versioned releases
-        # + local builds); CI rewrites its own checkout only, so the pin
-        # in the repo never drifts. The tarball is fetched here to compute
-        # the sha256 rattler will verify when it downloads the source.
+        # re-pins the recipe source (url + sha256) and the static build
+        # string ("<commit7>-sm120a") to the upstream commit this run
+        # builds. meta.yaml on main keeps the stable baseline (versioned
+        # releases + local builds); CI rewrites its own checkout only, so
+        # the pin in the repo never drifts. The tarball is fetched here to
+        # compute the sha256 rattler will verify when it downloads the
+        # source.
         if: ${{ steps.skipcheck.outputs.skip != 'true' }}
         id: ver
         run: |
@@ -138,21 +147,25 @@ jobs:
           NEWSHA256="$(sha256sum /tmp/ninfer-head.tar.gz | awk '{print $1}')"
           sed -i "s|archive/[0-9a-f]\{40\}\.tar\.gz|archive/${UPSHA}.tar.gz|" recipe/meta.yaml
           sed -i "s|^    sha256: [0-9a-f]\{64\}$|    sha256: ${NEWSHA256}|" recipe/meta.yaml
+          sed -i "s|^  string: .*|  string: \"${UPSHA:0:7}-sm120a\"|" recipe/meta.yaml
           grep -q "archive/${UPSHA}\.tar\.gz" recipe/meta.yaml \
             || { echo "Error: failed to re-pin recipe source url to ${UPSHA}" >&2; exit 1; }
           grep -q "^    sha256: ${NEWSHA256}$" recipe/meta.yaml \
             || { echo "Error: failed to re-pin recipe source sha256" >&2; exit 1; }
-          # no dashes in the version; the build string carries the upstream hash + arch
+          grep -q "^  string: \"${UPSHA:0:7}-sm120a\"" recipe/meta.yaml \
+            || { echo "Error: failed to re-pin recipe build string" >&2; exit 1; }
+          # no dashes in the version; the static build string carries the upstream hash + arch
           echo "version=${TS}" >> "$GITHUB_OUTPUT"
-          echo "prefix=${UPSHA:0:7}-sm120a" >> "$GITHUB_OUTPUT"
           sed -i "s/^  version: .*/  version: ${TS}/" recipe/meta.yaml
-          grep -nE 'url:|sha256:|  version:' recipe/meta.yaml
+          grep -nE 'url:|sha256:|  version:|  string:' recipe/meta.yaml
 
       - name: Build conda package
+        # the static build.string in recipe/meta.yaml (re-pinned above) is
+        # the sole build-string source — no CLI prefix, so rattler's auto
+        # content-fingerprint tail is never appended
         if: ${{ steps.skipcheck.outputs.skip != 'true' }}
         run: |
-          rattler build -r recipe/meta.yaml -c conda-forge --test=skip \
-            --build-string-prefix "${{ steps.ver.outputs.prefix }}"
+          rattler build -r recipe/meta.yaml -c conda-forge --test=skip
 
       - name: Create per-build release (tag = v<version>-<upstream-hash>)
         # one tag + release per build; v-prefix keeps per-build tags away
@@ -191,6 +204,12 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "NInfer ${VER} (${UPSHA:0:7})" \
             --notes-file /tmp/release-notes.md
+          # twin asset with a constant name (same bytes): GitHub's
+          # /releases/latest/download/ninfer-latest.conda URL then always
+          # serves the newest build — the one-command mamba/micromamba
+          # install/replace-update entry point (see README)
+          gh release upload "v${VER}-${UPSHA:0:7}" output/linux-64/*.conda \
+            --name ninfer-latest.conda
           echo "tag=v${VER}-${UPSHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Prune old per-build releases (keep newest 3)

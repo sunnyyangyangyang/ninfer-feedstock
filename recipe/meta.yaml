@@ -20,11 +20,21 @@ package:
 source:
   # The upstream repository has no git tags and no in-tree version, so the
   # conda-side version is pinned to an upstream commit. Bump version + url +
-  # sha256 together when updating.
+  # sha256 + build.string together when updating.
   - url: https://github.com/Neroued/ninfer/archive/d9dbe1ce4d1a53deec2349e669a429a000c54d01.tar.gz
     sha256: 8d850db66ce4c39057a7f9e5b543ad9717562a021013ab7dbead2338801966f5
 
 build:
+  # Static build string = "<upstream commit7>-sm120a". Defining `string`
+  # stops rattler-build from auto-appending its opaque content-fingerprint
+  # and build-number tail (`_h<hash>_0`): with a static string the .conda
+  # filename and the package `build` field are exactly this string
+  # (verified: rattler-build 0.75.0, 2026-09-04). conda-build instead
+  # appends the build number (`..._0`) — cosmetic difference only.
+  # Keep in sync with the source pin: bump version + url + sha256 + string
+  # together. The continuous workflow rewrites this line per run to the
+  # built upstream HEAD commit (see .github/workflows/continuous-build.yml).
+  string: "d9dbe1c-sm120a"
   number: 0
 
 requirements:
