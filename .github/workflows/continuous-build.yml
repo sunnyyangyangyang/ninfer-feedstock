@@ -1,6 +1,6 @@
 name: Continuous Build (12h)
 
-# Twice-daily (00:00 + 12:00 UTC) build of the feedstock HEAD.
+# Twice-daily (00:00 + 12:00 UTC) build of the latest NInfer upstream code.
 #
 # On-time triggering: GitHub's free-tier `schedule` cron proved unreliable
 # (2026-09-01: the 00:00 UTC slot started 02:27 UTC, the 12:00 slot
@@ -13,15 +13,21 @@ name: Continuous Build (12h)
 # schedule block — keeping one would double-build ~3h after every on-time
 # dispatch.
 #
-# Every build is published under its own tag + GitHub Release:
-#   tag:   v<YYYY.MM.DD.HHMM>-<upstream-hash7>
-#          (upstream-hash7 = first 7 chars of the pinned NInfer commit from
-#          recipe/meta.yaml `source:` — the code the package is built from,
-#          NOT this feedstock repo's commit, whose hash only identifies
-#          recipe/CI plumbing; issue #1)
+# Each run builds the upstream repo's current state:
+#   * source = the default-branch HEAD of Neroued/ninfer at run time
+#     (the recipe's source pin is re-pinned in the CI checkout per run;
+#     the pin on main is the stable baseline for versioned releases —
+#     see README)
+#   * if upstream is unchanged since the last successful build, the run
+#     skips (green, no release): the channel already carries the latest
+#     code, so a rebuild would only publish duplicate assets
+#   * tag:   v<YYYY.MM.DD.HHMM>-<upstream-hash7>
+#          (upstream-hash7 = first 7 chars of the upstream commit the
+#          package was built from — NOT this feedstock repo's commit,
+#          whose hash only identifies recipe/CI plumbing; issue #1)
 #          (v-prefix: never matches build-and-release.yml's [0-9]* tag
 #          filter, so per-build tags can't re-trigger versioned builds)
-#   asset: ninfer-<YYYY.MM.DD.HHMM>-<upstream-hash7>-sm120a_h<hash>_0.conda
+#   * asset: ninfer-<YYYY.MM.DD.HHMM>-<upstream-hash7>-sm120a_h<hash>_0.conda
 #          (_h<hash>_0 is rattler's content fingerprint, auto-appended)
 # After each run, old per-build releases are pruned (newest 3 kept,
 # ~1.4 GB storage cap) and the Pages publish step drops repodata entries
@@ -44,7 +50,51 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Resolve upstream NInfer HEAD
+        # the channel tracks upstream: each run builds the default-branch
+        # HEAD of Neroued/ninfer at run time. git ls-remote (not the
+        # GitHub API): hosted runner IPs are shared and the unauthenticated
+        # API rate limit (60/h) would flake a twice-daily job.
+        id: upstream
+        run: |
+          UPSHA="$(git ls-remote https://github.com/Neroued/ninfer HEAD | awk 'NR==1{print $1}')"
+          if ! printf '%s' "$UPSHA" | grep -qE '^[0-9a-f]{40}$'; then
+            echo "Error: unexpected 'git ls-remote' result for Neroued/ninfer: '${UPSHA:-<empty>}'" >&2
+            exit 1
+          fi
+          echo "upsha=${UPSHA}" >> "$GITHUB_OUTPUT"
+          echo "upsha7=${UPSHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if upstream unchanged since last successful build
+        # the built upstream sha is recorded in the newest per-build
+        # release's notes ("NInfer commit: .../commit/<full sha>").
+        # Releases without that line (pre-2026-09-04 old format) don't
+        # match and force a rebuild — the safe direction. If the channel
+        # already carries the current upstream HEAD, this run publishes
+        # nothing and finishes green.
+        id: skipcheck
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          UPSHA="${{ steps.upstream.outputs.upsha }}"
+          LAST="$(gh release list --limit 100 --json tagName \
+            | jq -r '.[].tagName' \
+            | grep -E '^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{4}-[0-9a-f]{7}$' \
+            | sort | tail -1 || true)"
+          if [ -z "$LAST" ]; then
+            echo "no per-build releases yet; nothing to skip against"
+            exit 0
+          fi
+          PREV="$(gh release view "$LAST" --json body --jq .body \
+            | grep -oE 'commit/[0-9a-f]{40}' | tail -1 | sed 's|^commit/||' || true)"
+          echo "newest per-build release: ${LAST}; recorded upstream sha: ${PREV:-<none>}"
+          if [ "$PREV" = "$UPSHA" ]; then
+            echo "SKIP: upstream HEAD unchanged (${UPSHA:0:7}); channel already current"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Download rattler-build v0.75.0 (official prebuilt binary)
+        if: ${{ steps.skipcheck.outputs.skip != 'true' }}
         run: |
           curl -fsSL -O \
             https://github.com/prefix-dev/rattler-build/releases/download/v0.75.0/rattler-build-x86_64-unknown-linux-musl.tar.gz \
@@ -58,6 +108,7 @@ jobs:
           "$HOME/rattler/rattler" --version
 
       - name: Provision /lib64 (required by prebuilt CUDA 13 libraries)
+        if: ${{ steps.skipcheck.outputs.skip != 'true' }}
         run: |
           sudo mkdir -p /lib64 /usr/lib64
           for f in /lib/x86_64-linux-gnu/*.so*; do
@@ -71,25 +122,34 @@ jobs:
           fi
           ls -la /lib64/ | head -20
 
-      - name: Prepare timestamped version
+      - name: Repin recipe to upstream HEAD + prepare timestamped version
+        # re-pins the recipe source to the upstream commit this run builds:
+        # meta.yaml on main keeps the stable baseline (versioned releases
+        # + local builds); CI rewrites its own checkout only, so the pin
+        # in the repo never drifts. The tarball is fetched here to compute
+        # the sha256 rattler will verify when it downloads the source.
+        if: ${{ steps.skipcheck.outputs.skip != 'true' }}
         id: ver
         run: |
           TS="$(date -u +%Y.%m.%d.%H%M)"
-          # hash = the pinned UPSTREAM NInfer commit (the source tarball in
-          # recipe/meta.yaml), not this feedstock repo: the package content
-          # is defined by upstream code, the feedstock hash only identifies
-          # recipe/CI plumbing (issue #1). Follows the recipe automatically
-          # when the upstream pin is bumped.
-          UPSHA="$(grep -oE 'archive/[0-9a-f]{40}' recipe/meta.yaml | head -1 | sed 's|archive/||')"
-          [ -n "$UPSHA" ] || { echo "Error: no upstream commit sha in recipe/meta.yaml source url" >&2; exit 1; }
-          echo "upsha=${UPSHA}" >> "$GITHUB_OUTPUT"
+          UPSHA="${{ steps.upstream.outputs.upsha }}"
+          curl -fsSL -o /tmp/ninfer-head.tar.gz \
+            "https://github.com/Neroued/ninfer/archive/${UPSHA}.tar.gz"
+          NEWSHA256="$(sha256sum /tmp/ninfer-head.tar.gz | awk '{print $1}')"
+          sed -i "s|archive/[0-9a-f]\{40\}\.tar\.gz|archive/${UPSHA}.tar.gz|" recipe/meta.yaml
+          sed -i "s|^    sha256: [0-9a-f]\{64\}$|    sha256: ${NEWSHA256}|" recipe/meta.yaml
+          grep -q "archive/${UPSHA}\.tar\.gz" recipe/meta.yaml \
+            || { echo "Error: failed to re-pin recipe source url to ${UPSHA}" >&2; exit 1; }
+          grep -q "^    sha256: ${NEWSHA256}$" recipe/meta.yaml \
+            || { echo "Error: failed to re-pin recipe source sha256" >&2; exit 1; }
           # no dashes in the version; the build string carries the upstream hash + arch
           echo "version=${TS}" >> "$GITHUB_OUTPUT"
           echo "prefix=${UPSHA:0:7}-sm120a" >> "$GITHUB_OUTPUT"
           sed -i "s/^  version: .*/  version: ${TS}/" recipe/meta.yaml
-          grep -n 'version:' recipe/meta.yaml | head -2
+          grep -nE 'url:|sha256:|  version:' recipe/meta.yaml
 
       - name: Build conda package
+        if: ${{ steps.skipcheck.outputs.skip != 'true' }}
         run: |
           rattler build -r recipe/meta.yaml -c conda-forge --test=skip \
             --build-string-prefix "${{ steps.ver.outputs.prefix }}"
@@ -97,13 +157,14 @@ jobs:
       - name: Create per-build release (tag = v<version>-<upstream-hash>)
         # one tag + release per build; v-prefix keeps per-build tags away
         # from build-and-release.yml's [0-9]* tag trigger; the hash is the
-        # pinned upstream NInfer commit (issue #1)
+        # upstream NInfer commit the package was built from (issue #1)
+        if: ${{ steps.skipcheck.outputs.skip != 'true' }}
         id: tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VER="${{ steps.ver.outputs.version }}"
-          UPSHA="${{ steps.ver.outputs.upsha }}"
+          UPSHA="${{ steps.upstream.outputs.upsha }}"
           {
             echo "# NInfer ${VER} — linux-64 (sm_120a, continuous build)"
             echo ""
@@ -136,6 +197,7 @@ jobs:
         # per-build tags match v<ts>-<upstream-hash7>; versioned tags
         # ([0-9]*...) are never touched. Newest 3 kept => ~1.4 GB
         # release-storage cap.
+        if: ${{ steps.skipcheck.outputs.skip != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -161,11 +223,13 @@ jobs:
         # repodata entry (pointing at the per-build release just created)
         # with the channel's current ones and drops entries whose release
         # no longer exists (self-heals after pruning)
+        if: ${{ steps.skipcheck.outputs.skip != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 scripts/publish_pages_channel.py --mode release --tag "${{ steps.tag.outputs.tag }}"
 
       - name: Upload run artifact
+        if: ${{ steps.skipcheck.outputs.skip != 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: ninfer-conda

@@ -33,17 +33,27 @@ conda install ninfer            # run deps (cuda-cudart 13.x, ffmpeg, libcurl)
                                 # resolve automatically from conda-forge
 ```
 
-- Each 12-hour build publishes its own tag + GitHub Release:
-  `v<YYYY.MM.DD.HHMM>-<hash7>` (asset
+- Each 12-hour run fetches the **latest NInfer commit** (default-branch
+  HEAD of `Neroued/ninfer`) and publishes it under its own tag + GitHub
+  Release: `v<YYYY.MM.DD.HHMM>-<hash7>` (asset
   `ninfer-<YYYY.MM.DD.HHMM>-<hash7>-sm120a_h<hash>_0`, `_h<hash>_0` is
   rattler-build's content fingerprint). `<hash7>` is the first seven chars
-  of the pinned **upstream NInfer** commit (`source:` in `recipe/meta.yaml`)
-  — the code the package is actually built from — not this feedstock repo's
-  commit hash (issue #1); it follows the recipe automatically when the
-  upstream pin is bumped. The newest 3 per-build releases are retained,
+  of the upstream commit the package was built from — not this feedstock
+  repo's commit hash (issue #1). If upstream has no new commit since the
+  previous successful run, the run **skips** without publishing: the
+  channel already carries the latest code, so a rebuild would only
+  produce duplicate assets. The newest 3 per-build releases are retained,
   older ones (release + tag) are deleted, so a plain
   `conda install ninfer` always picks the newest timestamp while release
   storage stays bounded (~1.4 GB).
+- The `source:` pin in `recipe/meta.yaml` is the **stable baseline**:
+  versioned releases (`build-and-release.yml`) and local
+  `rattler build` use it as written. The continuous workflow re-pins it
+  in its own CI checkout per run, so the pin in the repo never drifts.
+- ⚠️ The channel tracks upstream HEAD: while upstream is in a broken
+  in-flight state, the newest channel entry may fail to build or misbehave
+  until upstream fixes it. Install a slightly older timestamped build
+  instead (pin `ninfer=<ts>`, or use the direct-URL form below).
 - Builds are dispatched at 00:00/12:00 UTC by an external cron service
   that fires GitHub's `workflow_dispatch` API on schedule (GitHub's
   free-tier `schedule` cron was observed lagging 2.5–3.7 h, and the
@@ -184,9 +194,11 @@ Output: `output/linux-64/ninfer-0.1.0-*.conda`
 - **Versioning**: upstream has no tags or in-tree version, so the package
   version is pinned to an upstream commit (see `source:` in `meta.yaml`).
   Bump `version` + `source url/sha256` together for updates. Per-build
-  release tags (`v<ts>-<hash7>`) and asset names carry the pinned upstream
-  commit's hash (not this feedstock repo's), so a tag always identifies the
-  exact NInfer source the package was built from.
+  release tags (`v<ts>-<hash7>`) and asset names carry the hash of the
+  upstream commit that build was made from (continuous builds pull upstream
+  HEAD per run; versioned builds use the pinned baseline) — not this
+  feedstock repo's hash — so a tag always identifies the exact NInfer
+  source the package was built from.
 
 ## Verifying the built package
 
