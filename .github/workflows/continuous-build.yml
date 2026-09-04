@@ -207,9 +207,10 @@ jobs:
           # twin asset with a constant name (same bytes): GitHub's
           # /releases/latest/download/ninfer-latest.conda URL then always
           # serves the newest build — the one-command mamba/micromamba
-          # install/replace-update entry point (see README)
-          gh release upload "v${VER}-${UPSHA:0:7}" output/linux-64/*.conda \
-            --name ninfer-latest.conda
+          # install/replace-update entry point (see README). gh release
+          # upload names the asset after the local file, so rename first.
+          cp output/linux-64/*.conda /tmp/ninfer-latest.conda
+          gh release upload "v${VER}-${UPSHA:0:7}" /tmp/ninfer-latest.conda
           echo "tag=v${VER}-${UPSHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Prune old per-build releases (keep newest 3)

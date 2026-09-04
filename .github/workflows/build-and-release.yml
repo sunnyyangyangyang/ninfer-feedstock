@@ -121,8 +121,11 @@ jobs:
           fi
           # twin asset with a constant name: keeps GitHub's
           # /releases/latest/download/ninfer-latest.conda stable even when
-          # a versioned release becomes the newest one (README, mamba section)
-          gh release upload "$VER" "$PKG" --name ninfer-latest.conda --clobber
+          # a versioned release becomes the newest one (README, mamba
+          # section). gh release upload names the asset after the local
+          # file, so rename first.
+          cp "$PKG" /tmp/ninfer-latest.conda
+          gh release upload "$VER" /tmp/ninfer-latest.conda --clobber
 
       - name: Publish to Pages channel
         # gh-pages branch = static conda channel (repodata.json here, .conda
