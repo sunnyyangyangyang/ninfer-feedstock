@@ -76,12 +76,14 @@ jobs:
           PKG="$(ls output/linux-64/*.conda)"
           SHA="$(sha256sum "$PKG" | awk '{print $1}')"
           VER="$(awk '/^  version:/{print $2; exit}' recipe/meta.yaml)"
+          # pinned upstream NInfer commit (source url in recipe/meta.yaml)
+          UPSHA="$(grep -oE 'archive/[0-9a-f]{40}' recipe/meta.yaml | head -1 | sed 's|archive/||')"
           {
             echo "# NInfer ${VER} — linux-64 (CI build)"
             echo ""
             echo "Built by GitHub Actions with rattler-build v0.75.0 against conda-forge (glibc toolchain)."
             echo ""
-            echo "- Upstream: https://github.com/Neroued/ninfer (commit pinned in recipe/meta.yaml)"
+            echo "- Upstream: https://github.com/Neroued/ninfer (commit ${UPSHA})"
             echo "- Target hardware: NVIDIA GeForce RTX 5090 (sm_120a / Blackwell); CUDA 13.x"
             echo "- Binaries: ninfer (CLI), ninfer-serve (HTTP server, OpenAI/Anthropic-compatible APIs), ninfer-perplexity"
             echo "- Runtime deps (conda-forge): cuda-cudart 13.x, ffmpeg, libcurl, libstdcxx-ng — plus the system NVIDIA driver (provides libcuda.so.1)"

@@ -34,10 +34,14 @@ conda install ninfer            # run deps (cuda-cudart 13.x, ffmpeg, libcurl)
 ```
 
 - Each 12-hour build publishes its own tag + GitHub Release:
-  `v<YYYY.MM.DD.HHMM>-<githash7>` (asset
-  `ninfer-<YYYY.MM.DD.HHMM>-<githash7>-sm120a_h<hash>_0`, `_h<hash>_0` is
-  rattler-build's content fingerprint). The newest 3 per-build releases are
-  retained, older ones (release + tag) are deleted, so a plain
+  `v<YYYY.MM.DD.HHMM>-<hash7>` (asset
+  `ninfer-<YYYY.MM.DD.HHMM>-<hash7>-sm120a_h<hash>_0`, `_h<hash>_0` is
+  rattler-build's content fingerprint). `<hash7>` is the first seven chars
+  of the pinned **upstream NInfer** commit (`source:` in `recipe/meta.yaml`)
+  — the code the package is actually built from — not this feedstock repo's
+  commit hash (issue #1); it follows the recipe automatically when the
+  upstream pin is bumped. The newest 3 per-build releases are retained,
+  older ones (release + tag) are deleted, so a plain
   `conda install ninfer` always picks the newest timestamp while release
   storage stays bounded (~1.4 GB).
 - Builds are dispatched at 00:00/12:00 UTC by an external cron service
@@ -82,8 +86,9 @@ curl -s https://sunnyyangyangyang.github.io/ninfer-feedstock/linux-64/repodata.j
 
 # 2. install. Run deps (cuda-cudart 13.*, ffmpeg, libcurl, libstdcxx-ng)
 #    must be satisfiable from the prefix or your channels (add `-c conda-forge`).
-#    <tag> is the per-build release tag (v<YYYY.MM.DD.HHMM>-<githash7>);
-#    the repodata entry's "url" field is the exact asset URL to paste:
+#    <tag> is the per-build release tag (v<YYYY.MM.DD.HHMM>-<hash7>,
+#    upstream NInfer commit hash); the repodata entry's "url" field is the
+#    exact asset URL to paste:
 mamba install -p <prefix> \
     "https://github.com/sunnyyangyangyang/ninfer-feedstock/releases/download/<tag>/<asset>.conda"
 ```
@@ -178,7 +183,10 @@ Output: `output/linux-64/ninfer-0.1.0-*.conda`
   (`targets/x86_64-linux/include/nvtx3 -> <nsight-compute>/.../nvtx/include/nvtx3`).
 - **Versioning**: upstream has no tags or in-tree version, so the package
   version is pinned to an upstream commit (see `source:` in `meta.yaml`).
-  Bump `version` + `source url/sha256` together for updates.
+  Bump `version` + `source url/sha256` together for updates. Per-build
+  release tags (`v<ts>-<hash7>`) and asset names carry the pinned upstream
+  commit's hash (not this feedstock repo's), so a tag always identifies the
+  exact NInfer source the package was built from.
 
 ## Verifying the built package
 

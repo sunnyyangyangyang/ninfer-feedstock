@@ -14,10 +14,14 @@ name: Continuous Build (12h)
 # dispatch.
 #
 # Every build is published under its own tag + GitHub Release:
-#   tag:   v<YYYY.MM.DD.HHMM>-<githash7>
+#   tag:   v<YYYY.MM.DD.HHMM>-<upstream-hash7>
+#          (upstream-hash7 = first 7 chars of the pinned NInfer commit from
+#          recipe/meta.yaml `source:` — the code the package is built from,
+#          NOT this feedstock repo's commit, whose hash only identifies
+#          recipe/CI plumbing; issue #1)
 #          (v-prefix: never matches build-and-release.yml's [0-9]* tag
 #          filter, so per-build tags can't re-trigger versioned builds)
-#   asset: ninfer-<YYYY.MM.DD.HHMM>-<githash7>-sm120a_h<hash>_0.conda
+#   asset: ninfer-<YYYY.MM.DD.HHMM>-<upstream-hash7>-sm120a_h<hash>_0.conda
 #          (_h<hash>_0 is rattler's content fingerprint, auto-appended)
 # After each run, old per-build releases are pruned (newest 3 kept,
 # ~1.4 GB storage cap) and the Pages publish step drops repodata entries
@@ -71,10 +75,17 @@ jobs:
         id: ver
         run: |
           TS="$(date -u +%Y.%m.%d.%H%M)"
-          GHASH="${GITHUB_SHA::7}"
-          # no dashes in the version; the build string carries ghash+arch
+          # hash = the pinned UPSTREAM NInfer commit (the source tarball in
+          # recipe/meta.yaml), not this feedstock repo: the package content
+          # is defined by upstream code, the feedstock hash only identifies
+          # recipe/CI plumbing (issue #1). Follows the recipe automatically
+          # when the upstream pin is bumped.
+          UPSHA="$(grep -oE 'archive/[0-9a-f]{40}' recipe/meta.yaml | head -1 | sed 's|archive/||')"
+          [ -n "$UPSHA" ] || { echo "Error: no upstream commit sha in recipe/meta.yaml source url" >&2; exit 1; }
+          echo "upsha=${UPSHA}" >> "$GITHUB_OUTPUT"
+          # no dashes in the version; the build string carries the upstream hash + arch
           echo "version=${TS}" >> "$GITHUB_OUTPUT"
-          echo "prefix=${GHASH}-sm120a" >> "$GITHUB_OUTPUT"
+          echo "prefix=${UPSHA:0:7}-sm120a" >> "$GITHUB_OUTPUT"
           sed -i "s/^  version: .*/  version: ${TS}/" recipe/meta.yaml
           grep -n 'version:' recipe/meta.yaml | head -2
 
@@ -83,22 +94,23 @@ jobs:
           rattler build -r recipe/meta.yaml -c conda-forge --test=skip \
             --build-string-prefix "${{ steps.ver.outputs.prefix }}"
 
-      - name: Create per-build release (tag = v<version>-<githash>)
+      - name: Create per-build release (tag = v<version>-<upstream-hash>)
         # one tag + release per build; v-prefix keeps per-build tags away
-        # from build-and-release.yml's [0-9]* tag trigger
+        # from build-and-release.yml's [0-9]* tag trigger; the hash is the
+        # pinned upstream NInfer commit (issue #1)
         id: tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VER="${{ steps.ver.outputs.version }}"
-          GHASH="${GITHUB_SHA::7}"
-          TAG="v${VER}-${GHASH}"
+          UPSHA="${{ steps.ver.outputs.upsha }}"
           {
             echo "# NInfer ${VER} — linux-64 (sm_120a, continuous build)"
             echo ""
-            echo "Continuous build of the feedstock HEAD (RTX 5090 / sm_120a), 12-hour cycle."
+            echo "Continuous build of NInfer @ \`${UPSHA:0:7}\` (RTX 5090 / sm_120a), 12-hour cycle."
             echo ""
-            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- NInfer commit: https://github.com/Neroued/ninfer/commit/${UPSHA}"
+            echo "- Feedstock commit: \`${GITHUB_SHA}\`"
             echo "- Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- Channel: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
             echo ""
@@ -112,16 +124,18 @@ jobs:
             echo "mamba/micromamba users: install the asset below by direct URL (see README)."
           } > /tmp/release-notes.md
           # --target pins the auto-created tag to exactly the built commit
-          # (default would be "main branch head at release time")
-          gh release create "$TAG" output/linux-64/*.conda \
+          # (default would be "main branch head at release time"); the tag
+          # NAME carries the upstream hash even though it points here
+          gh release create "v${VER}-${UPSHA:0:7}" output/linux-64/*.conda \
             --target "$GITHUB_SHA" \
-            --title "NInfer ${VER} (${GHASH})" \
+            --title "NInfer ${VER} (${UPSHA:0:7})" \
             --notes-file /tmp/release-notes.md
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VER}-${UPSHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Prune old per-build releases (keep newest 3)
-        # per-build tags match v<ts>-<g7>; versioned tags ([0-9]*...) are
-        # never touched. Newest 3 kept => ~1.4 GB release-storage cap.
+        # per-build tags match v<ts>-<upstream-hash7>; versioned tags
+        # ([0-9]*...) are never touched. Newest 3 kept => ~1.4 GB
+        # release-storage cap.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
