@@ -47,8 +47,10 @@ name: Continuous Build (12h)
 #   * a twin asset with the constant name `ninfer-latest.conda` (same
 #     bytes) is uploaded too, so GitHub's
 #     /releases/latest/download/ninfer-latest.conda URL always serves the
-#     newest build — the one-command install/replace-update entry point
-#     for mamba/micromamba users (see README)
+#     newest build — the stable *download* URL for scripts (mamba/micromamba
+#     install the per-tag real-name asset URL instead: libmamba parses the
+#     filename and rejects the two-segment alias with "Missing name in
+#     filename"; see README)
 # After each run, old per-build releases are pruned (newest 3 kept,
 # ~1.4 GB storage cap) and the Pages publish step drops repodata entries
 # whose release no longer exists. Versioned releases (build-and-release.yml)
@@ -236,11 +238,18 @@ jobs:
             echo "## Install"
             echo ""
             echo '```'
+            echo "# classic conda — via the static channel"
             echo "conda config --add channels https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
             echo "conda install ninfer=${VER}"
             echo '```'
             echo ""
-            echo "mamba/micromamba users: install the asset below by direct URL (see README)."
+            echo '```'
+            echo "# mamba / micromamba — this release's real-name asset, by direct URL"
+            echo "# (add -p <prefix> to target a specific environment)"
+            echo "mamba install \"https://github.com/${{ github.repository_owner }}/${{ github.event.repository.name }}/releases/download/v${VER}-${UPSHA:0:7}/ninfer-${VER}-${UPSHA:0:7}.conda\""
+            echo '```'
+            echo ""
+            echo "mamba/micromamba: re-run that line with a newer tag to replace-update. libmamba parses the filename (name/version/build, three dash-segments), so the two-segment \`ninfer-latest.conda\` alias is the stable download URL for scripts only — see the README."
           } > /tmp/release-notes.md
           # --target pins the auto-created tag to exactly the built commit
           # (default would be "main branch head at release time"); the tag
@@ -251,9 +260,11 @@ jobs:
             --notes-file /tmp/release-notes.md
           # twin asset with a constant name (same bytes): GitHub's
           # /releases/latest/download/ninfer-latest.conda URL then always
-          # serves the newest build — the one-command mamba/micromamba
-          # install/replace-update entry point (see README). gh release
-          # upload names the asset after the local file, so rename first.
+          # serves the newest build — the stable download URL for
+          # automation (mamba/micromamba install the per-tag real-name URL
+          # from the notes above; libmamba rejects the two-segment alias
+          # name — see README). gh release upload names the asset after
+          # the local file, so rename first.
           cp output/linux-64/*.conda /tmp/ninfer-latest.conda
           gh release upload "v${VER}-${UPSHA:0:7}" /tmp/ninfer-latest.conda
           echo "tag=v${VER}-${UPSHA:0:7}" >> "$GITHUB_OUTPUT"

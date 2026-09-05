@@ -43,10 +43,12 @@ conda install ninfer            # run deps (cuda-cudart 13.x, ffmpeg, libcurl)
   fingerprint tail). `<hash7>` is
   the first seven chars of the upstream commit the package was built from
   — not this feedstock repo's commit hash (issue #1). Every release also
-  ships a twin asset with the constant name `ninfer-latest.conda` (same
-  bytes), which turns GitHub's
-  `releases/latest/download/ninfer-latest.conda` URL into a stable
-  install/replace-update entry point (mamba section below). If upstream
+  ships a twin asset under the constant name `ninfer-latest.conda` (same
+  bytes), whose
+  `releases/latest/download/ninfer-latest.conda` URL always resolves to
+  the newest build — a stable *download* URL for scripts (mamba/micromamba
+  users install the per-tag real-name URL instead; see the mamba section
+  below). If upstream
   has no new commit since the previous successful run **and** the recipe is
   unchanged, the run **skips** without publishing: the channel already
   carries the latest code, so a rebuild would only produce duplicate
@@ -107,22 +109,42 @@ The `Failed to load subdir … repodata.json.zst … 404` warnings during
 `mamba install` are harmless: the channel publishes plain `repodata.json`
 and libmamba transparently falls back to it.
 
-### Installing / updating with mamba/micromamba: one stable URL
+### Installing / updating with mamba/micromamba: per-tag direct URL
 
 mamba (and micromamba) can install a `.conda` file by direct URL — the
 exact file the channel references, minus the (broken) channel
-indirection. Every release also ships the twin asset
-`ninfer-latest.conda` (identical bytes, constant name), and GitHub's
-`/releases/latest` endpoint always serves the newest release — so this
-**constant URL always hits the newest build**:
+indirection. One catch: libmamba derives name/version/build **from the
+filename** (right-to-left on `-`, three segments required), so the URL
+has to point at the **real asset name** `ninfer-<ts>-<hash7>.conda` —
+the two-segment `ninfer-latest.conda` alias is rejected with `Missing
+name in filename`. Each release's tag is exactly its asset directory, so
+any per-tag URL is stable forever:
 
 ```bash
 # install, or replace-update the installed build, in one command —
-# re-run it any time to jump to the newest build (same package name,
-# newer version: the solver unlinks the old one automatically):
-mamba install -p <prefix> \
-    "https://github.com/sunnyyangyangyang/ninfer-feedstock/releases/latest/download/ninfer-latest.conda"
+# swap the tag for a newer one to jump builds (same package name, newer
+# version: the solver unlinks the old one automatically).
+# <ts> = the build's YYYY.MM.DD.HHMM stamp, <hash7> = the upstream NInfer
+# commit it was built from (releases page, or the repodata name list in
+# the next section):
+mamba install \
+    "https://github.com/sunnyyangyangyang/ninfer-feedstock/releases/download/v<ts>-<hash7>/ninfer-<ts>-<hash7>.conda"
 ```
+
+Verified working (latest build at time of writing):
+
+```bash
+mamba install \
+    "https://github.com/sunnyyangyangyang/ninfer-feedstock/releases/download/v2026.09.05.1924-ad0f3d3/ninfer-2026.09.05.1924-ad0f3d3.conda"
+```
+
+The `ninfer-latest.conda` twin asset (identical bytes, constant name)
+stays as the stable **download** URL for automation — GitHub's
+`/releases/latest/download/ninfer-latest.conda` always serves the newest
+build. To `mamba install` that file locally, download it under its real
+asset name first (e.g. `curl -O` the alias URL, then rename to
+`ninfer-<ts>-<hash7>.conda`): libmamba parses the filename, so installing
+the two-segment alias name would misreport the package identity.
 
 Run deps (cuda-cudart 13.*, ffmpeg, libcurl, libstdcxx-ng) must be
 satisfiable from the prefix or your channels (add `-c conda-forge`).
@@ -149,6 +171,12 @@ mamba install -p <prefix> \
 - **Relative paths need `./` or an absolute path.** `mamba install
   Downloads/foo.conda` (no `./`) is parsed as *channel `Downloads`* and
   libmamba then 404s on `conda.anaconda.org/Downloads/foo.conda`.
+- **The `ninfer-latest.conda` alias name is only two dash-segments.**
+  libmamba's filename parser (name/version/build from the filename,
+  right-to-left) requires three segments, so both URL and local-file
+  installs of the alias fail with `Missing name in filename`. Use the
+  per-tag real-name URL above, or download the alias under its real
+  asset name first.
 - Installing from a **local file** (not a channel) prints
   `Could not validate package …: md5 and sha256 sum unknown` — harmless:
   there is no repodata to verify against. `--no-safety-checks` silences

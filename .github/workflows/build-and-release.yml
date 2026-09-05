@@ -91,9 +91,12 @@ jobs:
             echo "## Install"
             echo ""
             echo '```'
-            echo "# offline-capable"
+            echo "# offline-capable (local file, three-segment real name — works with both clients)"
             echo "conda install --offline ${PKG}"
             echo "micromamba install ${PKG}"
+            echo ""
+            echo "# mamba / micromamba — direct asset URL"
+            echo "mamba install \"https://github.com/${{ github.repository_owner }}/${{ github.event.repository.name }}/releases/download/${VER}/$(basename ${PKG})\""
             echo ""
             echo "# smoke test only — no GPU/VRAM needed (on a machine with the NVIDIA driver)"
             echo "ninfer --help"
@@ -121,7 +124,9 @@ jobs:
           fi
           # twin asset with a constant name: keeps GitHub's
           # /releases/latest/download/ninfer-latest.conda stable even when
-          # a versioned release becomes the newest one (README, mamba
+          # a versioned release becomes the newest one — the
+          # download-by-URL entry point (mamba/micromamba users use the
+          # per-tag real-name URL from the notes above; README, mamba
           # section). gh release upload names the asset after the local
           # file, so rename first.
           cp "$PKG" /tmp/ninfer-latest.conda
