@@ -39,10 +39,11 @@ name: Continuous Build (12h)
 #          whose hash only identifies recipe/CI plumbing; issue #1)
 #          (v-prefix: never matches build-and-release.yml's [0-9]* tag
 #          filter, so per-build tags can't re-trigger versioned builds)
-#   * asset: ninfer-<YYYY.MM.DD.HHMM>-<upstream-hash7>-sm120a.conda
-#          (the recipe's static `build.string` = "<upstream-hash7>-sm120a"
-#          is used verbatim by rattler-build — no auto content-fingerprint
-#          tail — so the filename/`build` field is exactly that)
+#   * asset: ninfer-<YYYY.MM.DD.HHMM>-<upstream-hash7>.conda
+#          (the recipe's static `build.string` = "<upstream-hash7>" is
+#          used verbatim by rattler-build — no auto content-fingerprint
+#          tail, no arch suffix — so the filename/`build` field is exactly
+#          the upstream commit7)
 #   * a twin asset with the constant name `ninfer-latest.conda` (same
 #     bytes) is uploaded too, so GitHub's
 #     /releases/latest/download/ninfer-latest.conda URL always serves the
@@ -150,7 +151,7 @@ jobs:
 
       - name: Repin recipe to upstream HEAD + prepare timestamped version
         # re-pins the recipe source (url + sha256) and the static build
-        # string ("<commit7>-sm120a") to the upstream commit this run
+        # string ("<commit7>") to the upstream commit this run
         # builds. meta.yaml on main keeps the stable baseline (versioned
         # releases + local builds); CI rewrites its own checkout only, so
         # the pin in the repo never drifts. The tarball is fetched here to
@@ -171,7 +172,7 @@ jobs:
           NEWSHA256="$(sha256sum /tmp/ninfer-head.tar.gz | awk '{print $1}')"
           sed -i "s|archive/[0-9a-f]\{40\}\.tar\.gz|archive/${UPSHA}.tar.gz|" recipe/meta.yaml
           sed -i "s|^    sha256: [0-9a-f]\{64\}$|    sha256: ${NEWSHA256}|" recipe/meta.yaml
-          sed -i "s|^  string: .*|  string: \"${UPSHA:0:7}-sm120a\"|" recipe/meta.yaml
+          sed -i "s|^  string: .*|  string: \"${UPSHA:0:7}\"|" recipe/meta.yaml
           # cherry-picked-commit lifecycle: when upstream HEAD is a patch's
           # own commit sha, its tarball already contains the change — drop
           # the patch lines (marker comment + `patches:` + entries). Keep
@@ -187,7 +188,7 @@ jobs:
             || { echo "Error: failed to re-pin recipe source url to ${UPSHA}" >&2; exit 1; }
           grep -q "^    sha256: ${NEWSHA256}$" recipe/meta.yaml \
             || { echo "Error: failed to re-pin recipe source sha256" >&2; exit 1; }
-          grep -q "^  string: \"${UPSHA:0:7}-sm120a\"" recipe/meta.yaml \
+          grep -q "^  string: \"${UPSHA:0:7}\"" recipe/meta.yaml \
             || { echo "Error: failed to re-pin recipe build string" >&2; exit 1; }
           # no dashes in the version; the static build string carries the upstream hash + arch
           echo "version=${TS}" >> "$GITHUB_OUTPUT"

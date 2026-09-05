@@ -36,9 +36,11 @@ conda install ninfer            # run deps (cuda-cudart 13.x, ffmpeg, libcurl)
 - Each 12-hour run fetches the **latest NInfer commit** (default-branch
   HEAD of `Neroued/ninfer`) and publishes it under its own tag + GitHub
   Release: `v<YYYY.MM.DD.HHMM>-<hash7>` (asset
-  `ninfer-<YYYY.MM.DD.HHMM>-<hash7>-sm120a.conda` — the recipe's static
-  `build.string` is exactly `<hash7>-sm120a`, so the filename and the
-  package's `build` field carry no opaque fingerprint tail). `<hash7>` is
+  `ninfer-<YYYY.MM.DD.HHMM>-<hash7>.conda` — the recipe's static
+  `build.string` is exactly `<hash7>` (no arch suffix in the package
+  identity — the package hard-rejects every GPU but the RTX 5090 anyway),
+  so the filename and the package's `build` field carry no opaque
+  fingerprint tail). `<hash7>` is
   the first seven chars of the upstream commit the package was built from
   — not this feedstock repo's commit hash (issue #1). Every release also
   ships a twin asset with the constant name `ninfer-latest.conda` (same
@@ -224,7 +226,7 @@ rattler build \
 ```
 
 Output: `output/linux-64/ninfer-0.1.0-*.conda` (the baseline pin on
-main — identity rides on the `<commit7>-sm120a` build string, not the
+main — identity rides on the `<commit7>` build string, not the
 version number; continuous CI builds are timestamped instead)
 
 ### Notes
@@ -247,7 +249,7 @@ version number; continuous CI builds are timestamped instead)
   version is pinned to an upstream commit (see `source:` in `meta.yaml`).
   Bump `version` + `source url/sha256` + `build.string` (+ `source
   patches`, if any) together for updates (the build string is
-  `<commit7>-sm120a`, see `build:` in `meta.yaml`). Cherry-picked
+  `<commit7>` — no arch suffix — see `build:` in `meta.yaml`). Cherry-picked
   upstream commits that are not on any upstream branch yet go into
   `source: patches:` instead of a pin bump (see the "Recipe patches"
   bullet above) — that is how `d8e2a27a` ships since 2026-09-05. Per-build release tags (`v<ts>-<hash7>`) and asset names

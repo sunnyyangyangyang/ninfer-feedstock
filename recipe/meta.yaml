@@ -41,7 +41,10 @@ source:
       - patches/0001-d8e2a27a-raise-prompt-vision-envelope-262144.patch
 
 build:
-  # Static build string = "<upstream commit7>-sm120a". Defining `string`
+  # Static build string = "<upstream commit7>" — the package identity is
+  # name=ninfer, version=<date/ts>, build=<commit7>; no arch suffix
+  # (the package hard-rejects every GPU but the RTX 5090 anyway, so
+  # sm_120a is implied and kept out of the identity). Defining `string`
   # stops rattler-build from auto-appending its opaque content-fingerprint
   # and build-number tail (`_h<hash>_0`): with a static string the .conda
   # filename and the package `build` field are exactly this string
@@ -50,7 +53,7 @@ build:
   # Keep in sync with the source pin: bump version + url + sha256 + string
   # together. The continuous workflow rewrites this line per run to the
   # built upstream HEAD commit (see .github/workflows/continuous-build.yml).
-  string: "ad0f3d3-sm120a"
+  string: "ad0f3d3"
   number: 0
 
 requirements:
