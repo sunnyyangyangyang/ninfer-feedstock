@@ -45,9 +45,15 @@ conda install ninfer            # run deps (cuda-cudart 13.x, ffmpeg, libcurl)
   bytes), which turns GitHub's
   `releases/latest/download/ninfer-latest.conda` URL into a stable
   install/replace-update entry point (mamba section below). If upstream
-  has no new commit since the previous successful run, the run **skips**
-  without publishing: the channel already carries the latest code, so a
-  rebuild would only produce duplicate assets. The newest 3 per-build
+  has no new commit since the previous successful run **and** the recipe is
+  unchanged, the run **skips** without publishing: the channel already
+  carries the latest code, so a rebuild would only produce duplicate
+  assets. (The skip check compares both inputs recorded in the newest
+  release's notes — the upstream commit *and* the feedstock commit — so a
+  recipe change such as a cherry-picked patch forces a rebuild at the next
+  run. A caveat of tracking only the default-branch HEAD: an upstream
+  commit that is not on any branch yet is invisible to the run — that is
+  what recipe patches below are for.) The newest 3 per-build
   releases are retained, older ones (release + tag) are deleted, so a
   plain `conda install ninfer` always picks the newest timestamp while
   release storage stays bounded (~1.4 GB).
@@ -55,6 +61,18 @@ conda install ninfer            # run deps (cuda-cudart 13.x, ffmpeg, libcurl)
   versioned releases (`build-and-release.yml`) and local
   `rattler build` use it as written. The continuous workflow re-pins it
   in its own CI checkout per run, so the pin in the repo never drifts.
+- `recipe/meta.yaml` may carry `source: patches:` — upstream commits
+  cherry-picked on top of the source pin while they are not (yet) on any
+  upstream branch (a loose commit object is invisible to the continuous
+  build's `git ls-remote HEAD`, so without the patch it could sit
+  unshipped for days: 2026-09-05, commit `d8e2a27a` — vision envelope
+  262144 tokens — committed on top of `ad0f3d38`, on no branch). Every
+  run applies the patch on top of the upstream HEAD it fetches and lists
+  it in the release notes. When the fetched HEAD becomes the patch's own
+  commit sha, the workflow drops the patch lines automatically; at that
+  point bump the `source:` pin on main to that sha and delete the patch
+  file (patches are `git format-patch`-style `a/`/`b/` diffs, applied
+  with `patch -p1` by both builders).
 - ⚠️ The channel tracks upstream HEAD: while upstream is in a broken
   in-flight state, the newest channel entry may fail to build or misbehave
   until upstream fixes it. Install a slightly older timestamped build
@@ -151,6 +169,7 @@ rattler-build v0.75 recipe schemas** — deliberately jinja-free plain YAML:
 | `about: homepage:` (not `home:`) | rattler's `about` schema only knows `homepage`; conda-build accepts both |
 | `tests:` section in the recipe + `run_test.sh` on disk | rattler runs the `tests:` section; conda-build ignores that key and runs `run_test.sh` — same `--help` smoke test either way |
 | static `build: string:` (no jinja, no `--build-string-prefix`) | both builders accept a static build string; rattler-build uses it **verbatim** (no auto `_h<hash>_0` content-fingerprint tail), conda-build appends the build number (`_0`) — cosmetic difference only |
+| `source: patches:` with `git format-patch`-style `a/`/`b/` diffs | both builders apply source patches with `patch -p1`; keep new patches in that format so the shared file stays builder-neutral |
 
 So the same feedstock builds under:
 
@@ -204,7 +223,9 @@ rattler build \
     -c conda-forge
 ```
 
-Output: `output/linux-64/ninfer-0.1.0-*.conda`
+Output: `output/linux-64/ninfer-0.1.0-*.conda` (the baseline pin on
+main — identity rides on the `<commit7>-sm120a` build string, not the
+version number; continuous CI builds are timestamped instead)
 
 ### Notes
 
@@ -224,9 +245,12 @@ Output: `output/linux-64/ninfer-0.1.0-*.conda`
   (`targets/x86_64-linux/include/nvtx3 -> <nsight-compute>/.../nvtx/include/nvtx3`).
 - **Versioning**: upstream has no tags or in-tree version, so the package
   version is pinned to an upstream commit (see `source:` in `meta.yaml`).
-  Bump `version` + `source url/sha256` + `build.string` together for
-  updates (the build string is `<commit7>-sm120a`, see `build:` in
-  `meta.yaml`). Per-build release tags (`v<ts>-<hash7>`) and asset names
+  Bump `version` + `source url/sha256` + `build.string` (+ `source
+  patches`, if any) together for updates (the build string is
+  `<commit7>-sm120a`, see `build:` in `meta.yaml`). Cherry-picked
+  upstream commits that are not on any upstream branch yet go into
+  `source: patches:` instead of a pin bump (see the "Recipe patches"
+  bullet above) — that is how `d8e2a27a` ships since 2026-09-05. Per-build release tags (`v<ts>-<hash7>`) and asset names
   carry the hash of the upstream commit that build was made from
   (continuous builds pull upstream HEAD per run; versioned builds use the
   pinned baseline) — not this feedstock repo's hash — so a tag always

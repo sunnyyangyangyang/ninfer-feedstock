@@ -8,3 +8,6 @@ cache/
 .STATUS-CONTINUOUS.md
 __pycache__/
 *.pyc
+
+# local gh CLI cache (per-session XDG_CACHE_HOME)
+.gh-cache/

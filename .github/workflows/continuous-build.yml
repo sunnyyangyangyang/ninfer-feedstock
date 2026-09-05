@@ -20,7 +20,19 @@ name: Continuous Build (12h)
 #     see README)
 #   * if upstream is unchanged since the last successful build, the run
 #     skips (green, no release): the channel already carries the latest
-#     code, so a rebuild would only publish duplicate assets
+#     code, so a rebuild would only publish duplicate assets. "Unchanged"
+#     means BOTH inputs: the upstream commit AND this feedstock commit
+#     (recipe + CI plumbing) recorded in the newest per-build release's
+#     notes — so a recipe change (e.g. a cherry-picked patch pushed to
+#     main) forces a rebuild at the next run even if upstream is still
+#   * recipe/meta.yaml may carry `source: patches:` entries: upstream
+#     commits cherry-picked on top of the source pin while not (yet) on any
+#     upstream branch. A commit on no branch is invisible to `git ls-remote
+#     HEAD`, so without the patch it could sit unshipped until it lands on
+#     a branch (2026-09-05: d8e2a27a, on top of ad0f3d38, on no branch).
+#     Each run applies the patch on top of the fetched upstream HEAD; the
+#     re-pin step auto-drops the `patches:` lines once the fetched HEAD is
+#     the patch's own commit sha (its tarball already carries the change)
 #   * tag:   v<YYYY.MM.DD.HHMM>-<upstream-hash7>
 #          (upstream-hash7 = first 7 chars of the upstream commit the
 #          package was built from — NOT this feedstock repo's commit,
@@ -74,10 +86,14 @@ jobs:
 
       - name: Skip if upstream unchanged since last successful build
         # the built upstream sha is recorded in the newest per-build
-        # release's notes ("NInfer commit: .../commit/<full sha>").
-        # Releases without that line (pre-2026-09-04 old format) don't
-        # match and force a rebuild — the safe direction. If the channel
-        # already carries the current upstream HEAD, this run publishes
+        # release's notes ("NInfer commit: .../commit/<full sha>"), and the
+        # feedstock sha that run used ("Feedstock commit: `<full sha>`").
+        # Both must match for a skip: a recipe change (cherry-picked patch,
+        # dependency bump, ...) changes the built package even when upstream
+        # HEAD is unchanged, so it must force a rebuild. Releases without
+        # one of those lines (pre-2026-09-04 old format) force a rebuild —
+        # the safe direction. If the channel already carries the current
+        # upstream HEAD built from the current recipe, this run publishes
         # nothing and finishes green.
         id: skipcheck
         env:
@@ -92,11 +108,14 @@ jobs:
             echo "no per-build releases yet; nothing to skip against"
             exit 0
           fi
-          PREV="$(gh release view "$LAST" --json body --jq .body \
+          NOTES="$(gh release view "$LAST" --json body --jq .body)"
+          PREV="$(printf '%s' "$NOTES" \
             | grep -oE 'commit/[0-9a-f]{40}' | tail -1 | sed 's|^commit/||' || true)"
-          echo "newest per-build release: ${LAST}; recorded upstream sha: ${PREV:-<none>}"
-          if [ "$PREV" = "$UPSHA" ]; then
-            echo "SKIP: upstream HEAD unchanged (${UPSHA:0:7}); channel already current"
+          FEEDSHA="$(printf '%s' "$NOTES" \
+            | grep -oE 'Feedstock commit: `[0-9a-f]{40}`' | grep -oE '[0-9a-f]{40}' | head -1 || true)"
+          echo "newest per-build release: ${LAST}; recorded upstream sha: ${PREV:-<none>}; feedstock sha: ${FEEDSHA:-<none>}"
+          if [ "$PREV" = "$UPSHA" ] && [ "$FEEDSHA" = "$GITHUB_SHA" ]; then
+            echo "SKIP: upstream HEAD (${UPSHA:0:7}) and recipe (feedstock ${GITHUB_SHA:0:7}) unchanged; channel already current"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -136,7 +155,12 @@ jobs:
         # releases + local builds); CI rewrites its own checkout only, so
         # the pin in the repo never drifts. The tarball is fetched here to
         # compute the sha256 rattler will verify when it downloads the
-        # source.
+        # source. Any recipe `patches:` entries (cherry-picked upstream
+        # commits, see recipe/meta.yaml) are kept and applied on top of the
+        # fetched HEAD — except when the fetched HEAD is the patch's own
+        # commit sha: that tarball already carries the change, so the patch
+        # lines are dropped here (otherwise the build fails on an
+        # already-applied hunk).
         if: ${{ steps.skipcheck.outputs.skip != 'true' }}
         id: ver
         run: |
@@ -148,6 +172,17 @@ jobs:
           sed -i "s|archive/[0-9a-f]\{40\}\.tar\.gz|archive/${UPSHA}.tar.gz|" recipe/meta.yaml
           sed -i "s|^    sha256: [0-9a-f]\{64\}$|    sha256: ${NEWSHA256}|" recipe/meta.yaml
           sed -i "s|^  string: .*|  string: \"${UPSHA:0:7}-sm120a\"|" recipe/meta.yaml
+          # cherry-picked-commit lifecycle: when upstream HEAD is a patch's
+          # own commit sha, its tarball already contains the change — drop
+          # the patch lines (marker comment + `patches:` + entries). Keep
+          # this list in sync with recipe/patches/ + recipe/meta.yaml.
+          for PATCHSHA in d8e2a27afad57fafe435b2dade8146dce1f7c29c; do
+            if [ "$UPSHA" = "$PATCHSHA" ]; then
+              sed -i -e '/^    patches:$/d' -e '/^      - patches\//d' \
+                     -e '/^    # Patch lifecycle:/d' recipe/meta.yaml
+              echo "upstream HEAD ${UPSHA:0:7} already contains recipe patch ${PATCHSHA:0:7}; patch lines dropped (bump the baseline pin on main)"
+            fi
+          done
           grep -q "archive/${UPSHA}\.tar\.gz" recipe/meta.yaml \
             || { echo "Error: failed to re-pin recipe source url to ${UPSHA}" >&2; exit 1; }
           grep -q "^    sha256: ${NEWSHA256}$" recipe/meta.yaml \
@@ -157,7 +192,12 @@ jobs:
           # no dashes in the version; the static build string carries the upstream hash + arch
           echo "version=${TS}" >> "$GITHUB_OUTPUT"
           sed -i "s/^  version: .*/  version: ${TS}/" recipe/meta.yaml
-          grep -nE 'url:|sha256:|  version:|  string:' recipe/meta.yaml
+          grep -nE 'url:|sha256:|  version:|  string:|patches:' recipe/meta.yaml
+          # surface applied recipe patches in the release notes (empty when
+          # no patches remain after the lifecycle drop above)
+          PATCHNOTE="$(grep -E '^[[:space:]]*- patches/' recipe/meta.yaml \
+            | sed 's/^[[:space:]]*- //' | tr '\n' ' ' || true)"
+          echo "patchnote=${PATCHNOTE}" >> "$GITHUB_OUTPUT"
 
       - name: Build conda package
         # the static build.string in recipe/meta.yaml (re-pinned above) is
@@ -184,6 +224,10 @@ jobs:
             echo "Continuous build of NInfer @ \`${UPSHA:0:7}\` (RTX 5090 / sm_120a), 12-hour cycle."
             echo ""
             echo "- NInfer commit: https://github.com/Neroued/ninfer/commit/${UPSHA}"
+             PATCHNOTE="${{ steps.ver.outputs.patchnote }}"
+             if [ -n "$PATCHNOTE" ]; then
+               echo "- Recipe patches applied on top of the upstream commit (cherry-picked, not yet on any upstream branch): ${PATCHNOTE}"
+             fi
             echo "- Feedstock commit: \`${GITHUB_SHA}\`"
             echo "- Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- Channel: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"

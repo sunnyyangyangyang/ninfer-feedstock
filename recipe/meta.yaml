@@ -20,9 +20,25 @@ package:
 source:
   # The upstream repository has no git tags and no in-tree version, so the
   # conda-side version is pinned to an upstream commit. Bump version + url +
-  # sha256 + build.string together when updating.
-  - url: https://github.com/Neroued/ninfer/archive/d9dbe1ce4d1a53deec2349e669a429a000c54d01.tar.gz
-    sha256: 8d850db66ce4c39057a7f9e5b543ad9717562a021013ab7dbead2338801966f5
+  # sha256 + build.string (+ the patches list, if any) together when updating.
+  #
+  # `patches:` holds upstream commits cherry-picked on top of the pinned
+  # source while they are not (yet) on any upstream branch: a commit that
+  # only exists as a loose commit object is invisible to the CI's
+  # `git ls-remote HEAD` (default-branch HEAD), so without the patch it
+  # could sit unshipped for days (2026-09-05: d8e2a27a, committed on top of
+  # ad0f3d38, on no branch — every run skipped as "unchanged").
+  # continuous-build.yml applies the patch on top of whatever upstream HEAD
+  # it fetches, and auto-drops the `patches:` lines below once the fetched
+  # HEAD is the patch's own commit sha; at that point bump this pin to that
+  # sha and delete the patch file.
+  - url: https://github.com/Neroued/ninfer/archive/ad0f3d384b5cbcec4a48a3951c287b4e9831443e.tar.gz
+    sha256: 6a0378513a964fd1d039c4ab5b4b075a835622fb95922f119b6f35b330af5078
+    # Patch lifecycle: drop the two lines below once Neroued/ninfer's
+    # default branch contains d8e2a27a (CI auto-drops them when it re-pins
+    # that sha — see .github/workflows/continuous-build.yml).
+    patches:
+      - patches/0001-d8e2a27a-raise-prompt-vision-envelope-262144.patch
 
 build:
   # Static build string = "<upstream commit7>-sm120a". Defining `string`
@@ -34,7 +50,7 @@ build:
   # Keep in sync with the source pin: bump version + url + sha256 + string
   # together. The continuous workflow rewrites this line per run to the
   # built upstream HEAD commit (see .github/workflows/continuous-build.yml).
-  string: "d9dbe1c-sm120a"
+  string: "ad0f3d3-sm120a"
   number: 0
 
 requirements:

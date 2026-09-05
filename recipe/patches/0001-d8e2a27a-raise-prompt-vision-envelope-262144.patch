@@ -1,0 +1,30 @@
+From d8e2a27afad57fafe435b2dade8146dce1f7c29c Mon Sep 17 00:00:00 2001
+From: sunnyyangyangyang <sunnyyangyangyang@users.noreply.github.com>
+Date: Fri, 4 Sep 2026 19:28:45 -0400
+Subject: [PATCH] feat(vision): raise prompt vision envelope to full context
+ (262144 tokens)
+
+kMaximumPromptVisionTokens 32768 -> 262144: the per-prompt raw-patch budget
+now spans the whole context window instead of capping at 32K vision tokens,
+so long image-heavy conversations are no longer rejected with
+media_budget_exceeded. Per-item limit (kMaximumVisionItemTokens) unchanged.
+---
+ .../qwen3_6/export/ninfer/targets/qwen3_6/prepared_prompt.h     | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/targets/qwen3_6/export/ninfer/targets/qwen3_6/prepared_prompt.h b/src/targets/qwen3_6/export/ninfer/targets/qwen3_6/prepared_prompt.h
+index 52c8ba3d..0bd3ec23 100644
+--- a/src/targets/qwen3_6/export/ninfer/targets/qwen3_6/prepared_prompt.h
++++ b/src/targets/qwen3_6/export/ninfer/targets/qwen3_6/prepared_prompt.h
+@@ -21,7 +21,7 @@ inline constexpr std::size_t kPreparedVisionPatchFeatures = 3ULL * 2ULL * 16ULL
+ inline constexpr std::uint64_t kRawPatchesPerVisionToken  = 4;
+ // Aggregate prompt capacity and one-item execution capacity are intentionally distinct. Multiple
+ // media items are retained by one prepared prompt but pass through the Vision tower sequentially.
+-inline constexpr std::uint64_t kMaximumPromptVisionTokens = 32'768;
++inline constexpr std::uint64_t kMaximumPromptVisionTokens = 262'144;
+ inline constexpr std::uint64_t kMaximumPromptVisionRawPatches =
+     kMaximumPromptVisionTokens * kRawPatchesPerVisionToken;
+ inline constexpr std::uint64_t kMaximumVisionItemTokens = 16'384;
+-- 
+2.55.0
+
