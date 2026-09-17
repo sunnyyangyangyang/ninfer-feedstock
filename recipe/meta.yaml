@@ -38,7 +38,7 @@ source:
     # default branch contains d8e2a27a (CI auto-drops them when it re-pins
     # that sha — see .github/workflows/continuous-build.yml).
     patches:
-      - patches/0001-d8e2a27a-raise-prompt-vision-envelope-262144.patch
+      - patches/for_ci_vision.patch
 
 build:
   # Static build string = "<upstream commit7>" — the package identity is
