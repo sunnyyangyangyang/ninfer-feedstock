@@ -77,6 +77,11 @@ requirements:
     - cmake >=3.28
     - ninja
     - pkgconf
+    # conda-forge splits libxml2: the .pc file (libxml-2.0.pc) lives in
+    # libxml2-devel, but libhwloc's Requires only pull the runtime packages
+    # (libxml2 / libxml2-16) — pkgconf needs -devel to resolve hwloc.pc's
+    # 'Requires: libxml-2.0' during CMake configure.
+    - libxml2-devel
   host:
     # Full CUDA 13.x toolkit: nvcc + libraries + dev files. The project's
     # find_package(CUDAToolkit) resolves against the conda prefix layout
@@ -91,6 +96,9 @@ requirements:
     # package libhwloc (ships hwloc.pc).
     - libhwloc >=2.5
     - liburing >=2.5
+    # see build: note — the .pc must sit in the prefix the build script's
+    # pkgconf searches
+    - libxml2-devel
   run:
     # ldd on the built binaries shows exactly one CUDA tool library
     # (libcudart.so.13); libcuda.so.1 comes from the system NVIDIA driver
