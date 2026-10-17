@@ -1,8 +1,8 @@
-diff --git a/src/models/qwen3_5/frontend/prepared_prompt.h b/src/models/qwen3_5/frontend/prepared_prompt.h
-index 42b8ff4e..694e0391 100644
---- a/src/models/qwen3_5/frontend/prepared_prompt.h
-+++ b/src/models/qwen3_5/frontend/prepared_prompt.h
-@@ -23,7 +23,7 @@ inline constexpr std::size_t kPreparedVisionPatchFeatures = 3ULL * 2ULL * 16ULL
+diff --git a/src/models/common/qwen/frontend/prepared_prompt.h b/src/models/common/qwen/frontend/prepared_prompt.h
+index 20c9841e..4c46f9cf 100644
+--- a/src/models/common/qwen/frontend/prepared_prompt.h
++++ b/src/models/common/qwen/frontend/prepared_prompt.h
+@@ -21,7 +21,7 @@
  inline constexpr std::uint64_t kRawPatchesPerVisionToken  = 4;
  // Aggregate prompt capacity and one-item execution capacity are intentionally distinct. Multiple
  // media items are retained by one prepared prompt but pass through the Vision tower sequentially.
