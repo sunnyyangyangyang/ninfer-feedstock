@@ -85,13 +85,22 @@ requirements:
     - cuda-toolkit 13.*
     - ffmpeg
     - libcurl >=7.85
+    # upstream 64d10fb (2026-10) added two hard requirements to
+    # cmake/Dependencies.cmake: hwloc (CPU affinity/NUMA, src/core/cpu)
+    # and liburing (io_uring, ninfer_core). conda-forge names the hwloc
+    # package libhwloc (ships hwloc.pc).
+    - libhwloc >=2.5
+    - liburing >=2.5
   run:
     # ldd on the built binaries shows exactly one CUDA tool library
     # (libcudart.so.13); libcuda.so.1 comes from the system NVIDIA driver
-    # and is intentionally not a conda dependency.
+    # and is intentionally not a conda dependency. hwloc/liburing are
+    # linked into the apps too (see host comment above).
     - cuda-cudart 13.*
     - ffmpeg
     - libcurl
+    - libhwloc
+    - liburing
     - libstdcxx-ng
 
 # Executed by rattler-build. conda-build ignores this key and instead runs
