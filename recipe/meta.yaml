@@ -41,6 +41,10 @@ source:
     # file relocated to src/models/common/qwen/frontend/ — for_ci_vision.patch
     # was regenerated against that tree (same 262144 change; d8e2a27a still
     # on no upstream branch). Bump url + sha256 + build.string together.
+    # 2026-10-30: upstream HEAD moved to 1882c6ad; the vision token constants
+    # moved out of prepared_prompt.h into resources.h, so for_ci_vision.patch
+    # was regenerated against that tree (same 262144 change; d8e2a27a still on
+    # no upstream branch). Bump url + sha256 + build.string together.
     patches:
       - patches/for_ci_vision.patch
 
